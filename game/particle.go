@@ -55,6 +55,9 @@ func (g *Game) drawParticles(screen *ebiten.Image) {
 
 // spawnBurst lança partículas radiais a partir de um ponto (explosões, dano).
 func (g *Game) spawnBurst(x, y float64, count int, speed float64, life int, size float64, gravity bool, col color.RGBA) {
+	if len(g.particles) >= maxParticles {
+		return
+	}
 	for i := 0; i < count; i++ {
 		angle := fxRand.Float64() * 2 * math.Pi
 		mag := speed * (0.4 + fxRand.Float64()*0.6)
@@ -78,6 +81,9 @@ func (g *Game) spawnExplosion(x, y float64, col color.RGBA) {
 
 // spawnCollectRing distribui partículas em círculo ao coletar um power-up.
 func (g *Game) spawnCollectRing(x, y float64, col color.RGBA) {
+	if len(g.particles) >= maxParticles {
+		return
+	}
 	for i := 0; i < collectParticles; i++ {
 		angle := float64(i) / float64(collectParticles) * 2 * math.Pi
 		g.particles = append(g.particles, &particle{
@@ -94,6 +100,9 @@ func (g *Game) spawnCollectRing(x, y float64, col color.RGBA) {
 
 // spawnTrail deixa um rastro tênue atrás de um projétil especial.
 func (g *Game) spawnTrail(x, y float64, col color.RGBA) {
+	if len(g.particles) >= maxParticles {
+		return
+	}
 	g.particles = append(g.particles, &particle{
 		x: x, y: y,
 		life:    trailLife,

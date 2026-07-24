@@ -47,6 +47,8 @@ const (
 	sfxBomb
 	sfxVictory
 	sfxGameOver
+	sfxShield
+	sfxMenu
 	sfxCount
 )
 
@@ -145,6 +147,8 @@ func (a *AudioManager) buildLibrary() {
 	a.sfx[sfxBomb] = a.loadSFX("bomb", genBomb)
 	a.sfx[sfxVictory] = a.loadSFX("victory", genVictory)
 	a.sfx[sfxGameOver] = a.loadSFX("game_over", genGameOver)
+	a.sfx[sfxShield] = a.loadSFX("shield_break", genShieldBreak)
+	a.sfx[sfxMenu] = a.loadSFX("menu", genMenuBlip)
 
 	a.music[musicMenu] = a.loadMusic("music_menu", genMusicMenu)
 	a.music[musicPhase] = a.loadMusic("music_phase", genMusicPhase)
@@ -466,6 +470,19 @@ func genGameOver(sr int) []float64 {
 	out = append(out, synth(sr, 330, 330, 0.2, 0.3, waveSquare, 0.03, 0.4)...)
 	out = append(out, synth(sr, 262, 262, 0.3, 0.3, waveSquare, 0.03, 0.5)...)
 	return out
+}
+
+// genShieldBreak: "clink" curto e brilhante (ruído + tom agudo) para o momento
+// em que o escudo absorve um golpe, distinto do som de dano.
+func genShieldBreak(sr int) []float64 {
+	tone := synth(sr, 1200, 700, 0.10, 0.28, waveSine, 0.01, 0.6)
+	noise := synth(sr, 0, 0, 0.06, 0.12, waveNoise, 0.01, 0.7)
+	return mix(tone, noise)
+}
+
+// genMenuBlip: bipe curtíssimo para navegação/confirmação de menu.
+func genMenuBlip(sr int) []float64 {
+	return synth(sr, 660, 660, 0.045, 0.22, waveSine, 0.05, 0.5)
 }
 
 // sequence encadeia notas (freq, duração) formando um laço curto de música.

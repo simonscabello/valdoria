@@ -7,6 +7,15 @@ import (
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
+// Projéteis inimigos usam magenta/roxo com núcleo claro: uma cor "ameaçadora"
+// deliberadamente distinta de todas as armas do jogador (luz amarela, chamas
+// laranjas, gelo ciano), para leitura imediata de aliado × inimigo.
+var (
+	enemyBulletColor   = color.RGBA{0xc8, 0x28, 0xdc, 0xff}
+	enemyBulletCore    = color.RGBA{0xff, 0xda, 0xff, 0xff}
+	enemyBulletOutline = color.RGBA{0x20, 0x08, 0x28, 0xff}
+)
+
 type EnemyBullet struct {
 	x, y   float64
 	vx, vy float64
@@ -28,6 +37,10 @@ func (b *EnemyBullet) offScreen() bool {
 }
 
 func (b *EnemyBullet) draw(screen *ebiten.Image) {
-	c := color.RGBA{0xff, 0x6a, 0x3a, 0xff}
-	vector.DrawFilledRect(screen, float32(b.x), float32(b.y), enemyBulletSize, enemyBulletSize, c, false)
+	// Halo escuro (contorno) + corpo magenta + núcleo claro: destaca o projétil
+	// sobre qualquer fundo e o diferencia dos disparos do jogador.
+	x, y := float32(b.x), float32(b.y)
+	vector.DrawFilledRect(screen, x-1, y-1, enemyBulletSize+2, enemyBulletSize+2, enemyBulletOutline, false)
+	vector.DrawFilledRect(screen, x, y, enemyBulletSize, enemyBulletSize, enemyBulletColor, false)
+	vector.DrawFilledRect(screen, x+1, y+1, enemyBulletSize-2, enemyBulletSize-2, enemyBulletCore, false)
 }

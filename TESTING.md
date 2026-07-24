@@ -46,6 +46,7 @@ Atalhos de desenvolvimento (somente com `VALDORIA_DEV=1`): `F1` HUD, `F2` hitbox
 - [ ] "Sair" encerra o jogo sem erro no terminal.
 - [ ] `M` silencia e reativa o áudio (o indicador some/volta).
 - [ ] Esc no menu **não** dispara pausa.
+- [ ] Navegar e confirmar no menu emitem um bipe curto de feedback.
 
 ## 2. Fase (jogabilidade)
 
@@ -61,6 +62,10 @@ Atalhos de desenvolvimento (somente com `VALDORIA_DEV=1`): `F1` HUD, `F2` hitbox
 - [ ] A dificuldade sobe por trecho: Vila (harpias com tiro), Muralhas (gárgulas), Castelo (wyverns).
 - [ ] Avisos de trecho aparecem ("A vila esta sob ataque!", etc.) e a barra de progresso avança.
 - [ ] Colisões: projétil destrói inimigo; encostar em inimigo causa dano.
+- [ ] Projéteis inimigos (magenta/roxo) são claramente distinguíveis dos disparos do jogador, inclusive das chamas laranjas.
+- [ ] Ao abater um inimigo aparece o número de pontos ganhos subindo (já com o multiplicador).
+- [ ] Abater um wyvern (inimigo grande) produz um breve "impacto" (hit-stop) com as partículas seguindo animadas.
+- [ ] O escudo, ao absorver um golpe, emite som e anel de partículas (e o combo **não** zera).
 - [ ] Ao tomar dano há invencibilidade curta com piscar; sem dano múltiplo no mesmo instante.
 - [ ] Pontuação sobe; multiplicador de combo aumenta em sequência e zera ao tomar dano.
 - [ ] Bônus por formação completa e por trecho sem dano são somados.
@@ -78,8 +83,8 @@ Atalhos de desenvolvimento (somente com `VALDORIA_DEV=1`): `F1` HUD, `F2` hitbox
 ## 4. Chefe (Vharak)
 
 - [ ] Após as ondas e sem inimigos restantes, o chefe entra pelo topo.
-- [ ] Durante a entrada o chefe é invulnerável, o nome aparece e inimigos/projéteis residuais somem.
-- [ ] Barra de vida do chefe é exibida.
+- [ ] Na entrada aparece o aviso pulsante "ALERTA" e o nome do chefe; ele é invulnerável e inimigos/projéteis residuais somem.
+- [ ] Barra de vida do chefe é exibida com moldura, cor por fase e marcas nos limiares (65% e 30%).
 - [ ] Fase 1 (100%–65%): bolas de fogo miradas e cone; movimento lento; padrões avisam antes de atirar.
 - [ ] Fase 2 (65%–30%): movimento mais rápido, leque em arco e invocação de corvos/harpias.
 - [ ] Fase 3 (<30%): ataques mais rápidos, cristais como pontos fracos e varredura com brecha.
@@ -87,6 +92,7 @@ Atalhos de desenvolvimento (somente com `VALDORIA_DEV=1`): `F1` HUD, `F2` hitbox
 - [ ] Ao mudar de fase os projéteis na tela são limpos.
 - [ ] Acertar os cristais causa dano extra.
 - [ ] O chefe para de atacar ao morrer e há sequência de explosões.
+- [ ] Durante a morte do chefe a arena é limpa e o jogador fica invulnerável — não há como perder no instante da vitória.
 - [ ] A derrota do chefe concede pontuação alta e leva à tela de Vitória.
 
 ## 5. Reinício e reset
@@ -112,7 +118,7 @@ Atalhos de desenvolvimento (somente com `VALDORIA_DEV=1`): `F1` HUD, `F2` hitbox
 ## 7. Áudio
 
 - [ ] Trilhas mudam entre menu, fase e chefe.
-- [ ] Efeitos tocam para tiro, inimigo destruído, dano, power-up, invocação, vitória e game over.
+- [ ] Efeitos tocam para tiro, inimigo destruído, dano, power-up, invocação, vitória, game over, quebra de escudo e menu.
 - [ ] `M` silencia/reativa a qualquer momento.
 - [ ] O jogo funciona normalmente mesmo sem arquivos em `assets/audio/`.
 

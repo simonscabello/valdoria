@@ -125,7 +125,7 @@ As teclas de desenvolvimento (`1`–`4`, `Z`/`F`/`C`/`V`/`B`, `Tab`, `F1`–`F3`
   - **Harpia**: vida média, zigue-zague e disparo reto para baixo.
   - **Gárgula**: resistente, entra pela lateral, ataca parada e sai pelo lado oposto.
   - **Wyvern**: grande e resistente, alinha-se ao jogador e dispara projéteis mirados (sem perseguir depois de lançados).
-- Projéteis inimigos e indicação visual de dano (piscada branca) ao acertar um inimigo.
+- Projéteis inimigos com cor própria (magenta/roxo com núcleo claro e contorno), deliberadamente distinta de todas as armas do jogador para leitura imediata de aliado × inimigo; indicação visual de dano (piscada branca) ao acertar um inimigo.
 - Colisão projétil × inimigo e jogador × inimigo/projétil, sem dano repetido de inimigos já destruídos.
 - **Fase 1 — O Cerco de Eldoria**: onda determinística baseada em linha do tempo, com quatro trechos (Campos, Vila, Muralhas, Aproximação do castelo), progressão de dificuldade, avisos de trecho, barra de progresso, mudança de cor de fundo por trecho e preparação da entrada do chefe ao concluir a fase.
 - **Três magias, cada uma com três níveis**:
@@ -149,9 +149,13 @@ As teclas de desenvolvimento (`1`–`4`, `Z`/`F`/`C`/`V`/`B`, `Tab`, `F1`–`F3`
   - Inimigos com leitura distinta (corvo, harpia, gárgula, wyvern e o chefe Vharak), com asas animadas.
   - Cenário em parallax de quatro camadas (nuvens altas, colinas distantes, estruturas/árvores e partículas), que muda de tema por trecho: campos, vila em chamas, muralhas e castelo.
   - Partículas ao destruir inimigos, efeito de coleta de power-up, rastros em projéteis especiais (gelo e chamas), sequência da invocação ancestral e explosões na morte do chefe.
+  - **Números de pontuação flutuantes** sobre o inimigo abatido (já com o multiplicador aplicado), reforçando o combo.
+  - **Impact freeze (hit-stop)** curto ao abater inimigos grandes (wyvern) e nas trocas de fase e na morte do chefe, dando peso aos golpes fortes sem parecer travamento (os efeitos seguem animando).
+  - **Feedback de escudo**: som e anel de partículas quando o escudo absorve um golpe (sem contar como dano).
   - Vibração de tela discreta em ataques fortes e flash suave ao receber dano, sem prejudicar a visibilidade dos projéteis (desenhados por cima dos efeitos).
+  - **Barra de vida do chefe** com moldura, cor por fase (vermelho → laranja → vermelho vivo) e marcas nos limiares de troca de fase (65% e 30%); aviso pulsante de "ALERTA" na entrada do chefe.
   - Opção no menu para ajustar a **Vibração** (Cheia / Reduzida / Off).
-- **Áudio básico** com gerenciador próprio: músicas de menu, fase e chefe (com troca suave por fade), e efeitos de disparo, inimigo destruído, dano, coleta, invocação ancestral, vitória e Game Over. Volumes de geral, música e efeitos, tecla `M` para silenciar e proteção contra repetir o mesmo efeito no mesmo frame. Os sons são gerados proceduralmente e podem ser substituídos por arquivos livres (veja `assets/audio/`); o jogo funciona normalmente mesmo sem arquivos.
+- **Áudio básico** com gerenciador próprio: músicas de menu, fase e chefe (com troca suave por fade), e efeitos de disparo, inimigo destruído, dano, coleta, invocação ancestral, vitória, Game Over, quebra de escudo e navegação/confirmação de menu. Volumes de geral, música e efeitos, tecla `M` para silenciar e proteção contra repetir o mesmo efeito no mesmo frame. Os sons são gerados proceduralmente e podem ser substituídos por arquivos livres (veja `assets/audio/`); o jogo funciona normalmente mesmo sem arquivos.
 
 A lógica roda em TPS fixo do Ebitengine (60), independente da taxa de renderização.
 A remoção de projéteis e inimigos reaproveita os slices e libera as referências
@@ -224,7 +228,7 @@ registre aqui a origem e a licença de cada um.
 | Pausa | Sim |
 | Áudio | Sim (música + efeitos, procedural) |
 | Modo de desenvolvimento | Sim (via variáveis de ambiente) |
-| Testes | Sim (66 testes automatizados) |
+| Testes | Sim (76 testes automatizados) |
 | Build executável | Sim (Linux e Windows) |
 
 ## Estrutura do projeto
@@ -259,9 +263,10 @@ valdoria/
     ├── background.go   # estrelas e parallax do cenário (nuvens, colinas, estruturas)
     ├── visual.go       # parâmetros visuais centrais, temas por trecho e vibração
     ├── particle.go     # sistema de partículas (explosões, coleta, rastros)
+    ├── popup.go        # números de pontuação flutuantes ao abater inimigos
     ├── effects.go      # vibração de tela e flash de dano
     ├── audio.go        # gerenciador de áudio (música, efeitos, volumes, mudo)
-    └── *_test.go       # 66 testes (jogador, armas, inimigos, ondas, chefe, fluxo, dev, áudio)
+    └── *_test.go       # 76 testes (jogador, armas, inimigos, ondas, chefe, fluxo, dev, áudio, integração)
 ```
 
 ## Modo de desenvolvimento
@@ -313,19 +318,21 @@ sequência de sorteios. Em código/testes, use `game.SetSeed(42)`.
 
 ## Testes automatizados
 
-São **66 testes** (`go test ./...`), cobrindo as regras independentes de renderização:
+São **76 testes** (`go test ./...`), cobrindo as regras independentes de renderização:
 
-- **Jogador**: clamp na tela, escudo, respawn e redução de arma, invencibilidade dev.
+- **Jogador**: clamp na tela, escudo, respawn e redução de arma, invencibilidade dev, normalização da diagonal.
 - **Armas**: troca, progressão de nível, teto, ângulos do leque, perfuração do gelo.
-- **Projéteis**: remoção fora da tela, ausência de dano repetido no mesmo alvo.
+- **Projéteis**: remoção fora da tela, ausência de dano repetido no mesmo alvo, cor distinta do inimigo.
 - **Inimigos**: dano, morte, pontuação, mira, movimento determinístico e fuga.
-- **Colisões**: acerto único por projétil e um único dano ao jogador por frame.
+- **Colisões**: acerto único por projétil e um único dano ao jogador por frame; escudo × dano real.
 - **Ondas**: ativação por tick, conclusão, troca de trecho, pausa na linha do tempo.
-- **Pontuação**: multiplicador, bônus de formação e de trecho sem dano.
+- **Pontuação**: multiplicador, bônus de formação e de trecho sem dano, popups ao abater.
 - **Power-ups**: coleta, cura, escudo, troca/upgrade de arma.
-- **Chefe**: fases por vida, seleção de padrão, invulnerabilidade e vitória.
+- **Chefe**: fases por vida, seleção de padrão, invulnerabilidade, vitória e limpeza segura da arena na morte.
+- **Feedback/efeitos**: hit-stop congela a lógica, teto de partículas respeitado.
 - **Mudança de estados e reinício**: menu inicial, pausa fora do jogo, Game Over sem
   avanço, sessão totalmente limpa ao reiniciar.
+- **Integração (fumaça)**: sessão completa dirigida pela lógica até a vitória, sem panic; chefe alcançado após as ondas.
 - **Áudio**: mudo, proteção de repetição por frame, troca de música, limite de volume.
 - **Semente**: reprodutibilidade dos sorteios e determinismo do reinício.
 

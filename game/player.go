@@ -63,13 +63,7 @@ func (p *Player) update() {
 		dy++
 	}
 
-	// Normaliza a diagonal para manter a mesma velocidade em oito direções.
-	if dx != 0 && dy != 0 {
-		const invSqrt2 = 0.7071
-		dx *= invSqrt2
-		dy *= invSqrt2
-	}
-
+	dx, dy = normalizeDiagonal(dx, dy)
 	p.x += dx * speed
 	p.y += dy * speed
 	p.clampToScreen()
@@ -89,6 +83,17 @@ func (p *Player) update() {
 	if p.shieldTimer > 0 {
 		p.shieldTimer--
 	}
+}
+
+// normalizeDiagonal mantém a mesma velocidade nas oito direções: a diagonal é
+// reduzida por 1/√2 para não ficar ~41% mais rápida que o movimento reto.
+func normalizeDiagonal(dx, dy float64) (float64, float64) {
+	if dx != 0 && dy != 0 {
+		const invSqrt2 = 0.70710678
+		dx *= invSqrt2
+		dy *= invSqrt2
+	}
+	return dx, dy
 }
 
 func (p *Player) clampToScreen() {

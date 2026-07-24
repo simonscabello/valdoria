@@ -23,6 +23,15 @@ const (
 	bossDeathParticles = 18
 	particleGravity    = 0.04
 	particleDrag       = 0.92
+	maxParticles       = 400 // teto de segurança: partículas são puramente cosméticas
+
+	// Números de pontuação flutuantes ao abater inimigos.
+	popupLife = 34
+	popupRise = 0.55
+	maxPopups = 40
+
+	// Impact freeze (hit-stop) em golpes fortes: poucos frames de congelamento.
+	hitStopBig = 3
 
 	// Vibração de tela (screen shake).
 	shakeHitMagnitude  = 2.0

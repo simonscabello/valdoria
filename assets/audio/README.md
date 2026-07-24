@@ -34,5 +34,7 @@ A busca é feita nesta ordem (`.ogg` antes de `.wav`). Qualquer taxa de amostrag
 | `bomb`         | Invocação ancestral (bomba)  |
 | `victory`      | Vitória                      |
 | `game_over`    | Game Over                    |
+| `shield_break` | Escudo absorve um golpe      |
+| `menu`         | Navegação/confirmação de menu |
 
 Exemplo: `assets/audio/shoot.ogg` ou `assets/audio/music_menu.wav`.

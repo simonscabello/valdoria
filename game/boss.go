@@ -98,6 +98,7 @@ type Boss struct {
 
 	justEntered  bool
 	phaseChanged bool
+	justDied     bool
 }
 
 func newBoss() *Boss {
@@ -148,6 +149,7 @@ func (b *Boss) startDying() {
 	b.phase = bossDying
 	b.invulnerable = true
 	b.dyingTimer = bossDeathDuration
+	b.justDied = true
 }
 
 func (b *Boss) update(ctx *bossContext) {

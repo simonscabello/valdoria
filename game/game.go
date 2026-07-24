@@ -42,10 +42,12 @@ type Game struct {
 	structures []*bgItem
 	dust       []*star
 	particles  []*particle
+	popups     []*scorePopup
 
 	shakeMag     float64
 	shakeSetting shakeLevel
 	damageFlash  int
+	hitStop      int
 	scene        *ebiten.Image
 
 	level       *Level
@@ -131,8 +133,10 @@ func (g *Game) reset() {
 	g.victoryTime = 0
 
 	g.particles = g.particles[:0]
+	g.popups = g.popups[:0]
 	g.shakeMag = 0
 	g.damageFlash = 0
+	g.hitStop = 0
 
 	if dev.startBoss {
 		g.startBoss()
@@ -216,6 +220,7 @@ func (g *Game) updateMenu() error {
 	if !inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
 		return nil
 	}
+	g.audio.playSFX(sfxMenu)
 	switch g.menuIndex {
 	case 0:
 		g.startNewGame()
@@ -241,6 +246,7 @@ func (g *Game) updateEndScreen(options []string) {
 	if !inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
 		return
 	}
+	g.audio.playSFX(sfxMenu)
 	if g.menuIndex == 0 {
 		g.startNewGame()
 		return
@@ -249,17 +255,36 @@ func (g *Game) updateEndScreen(options []string) {
 }
 
 func (g *Game) moveMenuSelection(count int) {
+	moved := false
 	if inpututil.IsKeyJustPressed(ebiten.KeyArrowUp) || inpututil.IsKeyJustPressed(ebiten.KeyW) {
 		g.menuIndex = (g.menuIndex - 1 + count) % count
+		moved = true
 	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyArrowDown) || inpututil.IsKeyJustPressed(ebiten.KeyS) {
 		g.menuIndex = (g.menuIndex + 1) % count
+		moved = true
+	}
+	if moved {
+		g.audio.playSFX(sfxMenu)
 	}
 }
 
 func (g *Game) updatePlay() {
 	g.handlePauseToggle()
 	if g.state == statePaused {
+		return
+	}
+
+	// Impact freeze: por poucos frames a lógica congela para dar peso aos golpes
+	// fortes, mas os efeitos visuais seguem animando para não parecer travamento.
+	if g.hitStop > 0 {
+		g.hitStop--
+		g.updateParticles()
+		g.updatePopups()
+		g.updateShake()
+		if g.damageFlash > 0 {
+			g.damageFlash--
+		}
 		return
 	}
 
@@ -302,6 +327,7 @@ func (g *Game) updatePlay() {
 
 	g.updateParallax()
 	g.updateParticles()
+	g.updatePopups()
 	g.updateShake()
 	if g.damageFlash > 0 {
 		g.damageFlash--
@@ -344,7 +370,20 @@ func (g *Game) updateBoss() {
 	if g.boss.phaseChanged {
 		g.enemyBullets = g.enemyBullets[:0]
 		g.addShake(shakeBossMagnitude)
+		g.hitStop = hitStopBig
 		g.boss.phaseChanged = false
+	}
+	// Ao iniciar a morte, a arena é limpa e o jogador fica invulnerável durante
+	// toda a sequência: nenhum projétil ou inimigo residual pode causar uma
+	// derrota injusta no exato instante da vitória.
+	if g.boss.justDied {
+		g.enemies = g.enemies[:0]
+		g.enemyBullets = g.enemyBullets[:0]
+		if g.player.invincible < bossDeathDuration {
+			g.player.invincible = bossDeathDuration
+		}
+		g.hitStop = hitStopBig
+		g.boss.justDied = false
 	}
 	if g.boss.phase == bossDying {
 		g.bossDeathEffects()
@@ -646,9 +685,7 @@ func (g *Game) playerBossCollision() {
 	}
 	hx, hy, hw, hh := g.player.hitbox()
 	if collides(hx, hy, hw, hh, boss.x, boss.y, boss.w, boss.h) {
-		if g.player.hit(bossContactDamage) {
-			g.onPlayerDamaged()
-		}
+		g.hitPlayer(bossContactDamage)
 	}
 }
 
@@ -667,9 +704,13 @@ func (g *Game) bulletEnemyCollisions() {
 			e.takeDamage(b.damage)
 			b.hitEnemies = append(b.hitEnemies, e)
 			if e.dead {
-				g.registerKill(e.score)
+				points := g.registerKill(e.score)
 				g.spawnDrop(e)
 				g.spawnExplosion(e.centerX(), e.centerY(), e.color)
+				g.spawnScorePopup(e.centerX(), e.y, points)
+				if e.kind == kindWyvern {
+					g.hitStop = hitStopBig // peso extra ao abater um inimigo grande
+				}
 			}
 			if b.pierce > 0 {
 				b.pierce--
@@ -690,9 +731,7 @@ func (g *Game) playerEnemyCollisions() {
 		if collides(hx, hy, hw, hh, e.x, e.y, e.w, e.h) {
 			e.dead = true
 			g.spawnExplosion(e.centerX(), e.centerY(), e.color)
-			if g.player.hit(e.damage) {
-				g.onPlayerDamaged()
-			}
+			g.hitPlayer(e.damage)
 			return
 		}
 	}
@@ -706,21 +745,24 @@ func (g *Game) playerBulletCollisions() {
 		}
 		if collides(hx, hy, hw, hh, b.x, b.y, enemyBulletSize, enemyBulletSize) {
 			b.dead = true
-			if g.player.hit(enemyBulletDamage) {
-				g.onPlayerDamaged()
-			}
+			g.hitPlayer(enemyBulletDamage)
 			return
 		}
 	}
 }
 
-func (g *Game) registerKill(base int) {
+// registerKill contabiliza uma eliminação por disparo, aplica o multiplicador de
+// combo e devolve os pontos efetivamente concedidos (para exibição).
+func (g *Game) registerKill(base int) int {
 	g.combo++
 	g.comboTimer = comboWindow
-	g.score += base * g.multiplier()
-	if g.multiplier() > g.maxMult {
-		g.maxMult = g.multiplier()
+	mult := g.multiplier()
+	points := base * mult
+	g.score += points
+	if mult > g.maxMult {
+		g.maxMult = mult
 	}
+	return points
 }
 
 func (g *Game) multiplier() int {
@@ -729,6 +771,20 @@ func (g *Game) multiplier() int {
 		return maxMultiplier
 	}
 	return m
+}
+
+// hitPlayer centraliza a aplicação de dano ao jogador nas três origens
+// (inimigo, projétil, chefe). Distingue o dano real da absorção pelo escudo,
+// garantindo o feedback correto em cada caso.
+func (g *Game) hitPlayer(damage int) {
+	hadShield := g.player.hasShield()
+	if g.player.hit(damage) {
+		g.onPlayerDamaged()
+		return
+	}
+	if hadShield {
+		g.onShieldBroken()
+	}
 }
 
 func (g *Game) onPlayerDamaged() {
@@ -740,6 +796,16 @@ func (g *Game) onPlayerDamaged() {
 	g.audio.playSFX(sfxPlayerHit)
 	if g.player != nil {
 		g.spawnBurst(g.player.centerX(), g.player.centerY(), 6, 2.0, 18, 2, false, color.RGBA{0xff, 0x60, 0x60, 0xff})
+	}
+}
+
+// onShieldBroken dá feedback claro de que o escudo absorveu um golpe (som,
+// anel de partículas e leve vibração), sem contar como dano recebido.
+func (g *Game) onShieldBroken() {
+	g.addShake(shakeHitMagnitude)
+	g.audio.playSFX(sfxShield)
+	if g.player != nil {
+		g.spawnCollectRing(g.player.centerX(), g.player.centerY(), shieldRing)
 	}
 }
 
@@ -915,6 +981,8 @@ func (g *Game) drawScene(dst *ebiten.Image) {
 		g.drawBombEffect(dst)
 	}
 
+	g.drawPopups(dst)
+
 	if dev.showHitboxes {
 		g.drawHitboxes(dst)
 	}
@@ -1082,15 +1150,39 @@ func (g *Game) drawBossHUD(screen *ebiten.Image) {
 		return
 	}
 	if b.phase == bossEntering {
+		// Aviso de entrada pulsante para leitura clara do início do combate.
+		if (b.tick/16)%2 == 0 {
+			drawCentered(screen, "! ALERTA !", ScreenHeight/2-14)
+		}
 		ebitenutil.DebugPrintAt(screen, "VHARAK, O DRAGAO CORROMPIDO", ScreenWidth/2-81, ScreenHeight/2)
 		return
 	}
 
 	const barY = 12
 	const margin = 10
+	const barH = 6
 	width := float32(ScreenWidth - 2*margin)
-	vector.DrawFilledRect(screen, margin, barY, width, 5, color.RGBA{0x30, 0x10, 0x10, 0xff}, false)
-	vector.DrawFilledRect(screen, margin, barY, width*float32(b.healthRatio()), 5, color.RGBA{0xc0, 0x30, 0x30, 0xff}, false)
+
+	// Moldura + trilho escuro.
+	vector.DrawFilledRect(screen, margin-1, barY-1, width+2, barH+2, color.RGBA{0x10, 0x08, 0x08, 0xff}, false)
+	vector.DrawFilledRect(screen, margin, barY, width, barH, color.RGBA{0x30, 0x10, 0x10, 0xff}, false)
+
+	// Preenchimento colorido pela fase atual (vermelho → laranja → vermelho vivo).
+	fill := color.RGBA{0xc0, 0x30, 0x30, 0xff}
+	switch b.phase {
+	case bossPhase2:
+		fill = color.RGBA{0xd0, 0x70, 0x20, 0xff}
+	case bossPhase3:
+		fill = color.RGBA{0xff, 0x40, 0x40, 0xff}
+	}
+	vector.DrawFilledRect(screen, margin, barY, width*float32(b.healthRatio()), barH, fill, false)
+
+	// Marcas nos limiares de troca de fase (65% e 30%), para o jogador antecipar.
+	tick := color.RGBA{0x20, 0x10, 0x10, 0xff}
+	for _, r := range []float64{0.65, 0.30} {
+		x := float32(margin) + width*float32(r)
+		vector.DrawFilledRect(screen, x, barY, 1, barH, tick, false)
+	}
 	ebitenutil.DebugPrintAt(screen, "VHARAK", margin, 0)
 
 	if b.action == actionWarning {
