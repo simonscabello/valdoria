@@ -38,7 +38,25 @@ type Game struct {
 	level       *Level
 	timeScale   int
 	resumeState state
-	score       int
+
+	lives           int
+	bombCharges     int
+	bombEffectTimer int
+
+	score      int
+	highScore  int
+	combo      int
+	comboTimer int
+
+	sectionDamaged bool
+	lastSection    int
+	formations     map[int]*formationTracker
+}
+
+type formationTracker struct {
+	total   int
+	killed  int
+	escaped int
 }
 
 func New() *Game {
@@ -57,7 +75,16 @@ func (g *Game) reset() {
 	g.powerups = g.powerups[:0]
 	g.level = newLevel()
 	g.timeScale = devTimeScale
+
+	g.lives = startingLives
+	g.bombCharges = bombStartCharges
+	g.bombEffectTimer = 0
 	g.score = 0
+	g.combo = 0
+	g.comboTimer = 0
+	g.sectionDamaged = false
+	g.lastSection = g.level.section
+	g.formations = map[int]*formationTracker{}
 }
 
 func (g *Game) Update() error {
@@ -79,11 +106,22 @@ func (g *Game) Update() error {
 	g.player.update()
 	g.bullets = append(g.bullets, g.player.tryShoot()...)
 	g.handleDebugSpawns()
+	g.handleBomb()
+
+	if g.bombEffectTimer > 0 {
+		g.bombEffectTimer--
+	}
+	if g.comboTimer > 0 {
+		g.comboTimer--
+		if g.comboTimer == 0 {
+			g.combo = 0
+		}
+	}
 
 	if g.state == statePlaying {
 		g.handleTimeScaleToggle()
 		for i := 0; i < g.timeScale; i++ {
-			g.enemies = append(g.enemies, g.level.update()...)
+			g.spawnFromLevel()
 		}
 	}
 
@@ -96,14 +134,93 @@ func (g *Game) Update() error {
 	g.removeDead()
 
 	if g.player.health <= 0 {
-		g.state = stateGameOver
-		return nil
+		g.loseLife()
 	}
-	if g.state == statePlaying && g.level.readyForBoss(len(g.enemies)) {
-		g.state = stateBossIncoming
+	if g.score > g.highScore {
+		g.highScore = g.score
+	}
+	if g.state == statePlaying {
+		g.checkSectionBonus()
+		if g.level.readyForBoss(len(g.enemies)) {
+			if !g.sectionDamaged {
+				g.score += waveNoDamageBonus
+			}
+			g.state = stateBossIncoming
+		}
 	}
 
 	return nil
+}
+
+func (g *Game) spawnFromLevel() {
+	for _, e := range g.level.update() {
+		if e.formationID > 0 {
+			g.registerFormationMember(e.formationID)
+		}
+		g.enemies = append(g.enemies, e)
+	}
+}
+
+func (g *Game) registerFormationMember(id int) {
+	t := g.formations[id]
+	if t == nil {
+		t = &formationTracker{}
+		g.formations[id] = t
+	}
+	t.total++
+}
+
+func (g *Game) loseLife() {
+	g.lives--
+	if g.lives <= 0 {
+		g.state = stateGameOver
+		return
+	}
+	g.respawn()
+}
+
+func (g *Game) respawn() {
+	g.enemyBullets = g.enemyBullets[:0]
+	g.player.respawn()
+	g.combo = 0
+	g.comboTimer = 0
+}
+
+func (g *Game) checkSectionBonus() {
+	if g.level.section == g.lastSection {
+		return
+	}
+	if !g.sectionDamaged {
+		g.score += waveNoDamageBonus
+	}
+	g.sectionDamaged = false
+	g.lastSection = g.level.section
+}
+
+func (g *Game) handleBomb() {
+	if g.state != statePlaying || g.bombCharges <= 0 {
+		return
+	}
+	if !inpututil.IsKeyJustPressed(ebiten.KeyX) && !inpututil.IsKeyJustPressed(ebiten.KeyControl) {
+		return
+	}
+	g.useBomb()
+}
+
+func (g *Game) useBomb() {
+	g.bombCharges--
+	g.enemyBullets = g.enemyBullets[:0]
+	for _, e := range g.enemies {
+		if e.dead {
+			continue
+		}
+		e.takeDamage(bombDamage)
+		if e.dead {
+			g.score += e.score
+		}
+	}
+	g.player.invincible = bombInvincibility
+	g.bombEffectTimer = bombEffectDuration
 }
 
 func (g *Game) handlePauseToggle() {
@@ -179,7 +296,7 @@ func (g *Game) handleDebugSpawns() {
 		return
 	}
 	g.debugSpawnPowerup(ebiten.KeyZ, powerLight)
-	g.debugSpawnPowerup(ebiten.KeyX, powerFire)
+	g.debugSpawnPowerup(ebiten.KeyF, powerFire)
 	g.debugSpawnPowerup(ebiten.KeyC, powerIce)
 	g.debugSpawnPowerup(ebiten.KeyV, powerHeal)
 	g.debugSpawnPowerup(ebiten.KeyB, powerShield)
@@ -200,6 +317,7 @@ func (g *Game) updateEnemies() {
 	for _, e := range g.enemies {
 		e.update(ctx)
 		if e.offScreen() {
+			e.escaped = true
 			e.dead = true
 		}
 	}
@@ -240,7 +358,7 @@ func (g *Game) bulletEnemyCollisions() {
 			e.takeDamage(b.damage)
 			b.hitEnemies = append(b.hitEnemies, e)
 			if e.dead {
-				g.score += e.score
+				g.registerKill(e.score)
 				g.spawnDrop(e)
 			}
 			if b.pierce > 0 {
@@ -261,7 +379,9 @@ func (g *Game) playerEnemyCollisions() {
 		}
 		if collides(hx, hy, hw, hh, e.x, e.y, e.w, e.h) {
 			e.dead = true
-			g.player.hit(e.damage)
+			if g.player.hit(e.damage) {
+				g.onPlayerDamaged()
+			}
 			return
 		}
 	}
@@ -275,10 +395,32 @@ func (g *Game) playerBulletCollisions() {
 		}
 		if collides(hx, hy, hw, hh, b.x, b.y, enemyBulletSize, enemyBulletSize) {
 			b.dead = true
-			g.player.hit(enemyBulletDamage)
+			if g.player.hit(enemyBulletDamage) {
+				g.onPlayerDamaged()
+			}
 			return
 		}
 	}
+}
+
+func (g *Game) registerKill(base int) {
+	g.combo++
+	g.comboTimer = comboWindow
+	g.score += base * g.multiplier()
+}
+
+func (g *Game) multiplier() int {
+	m := 1 + g.combo/comboStep
+	if m > maxMultiplier {
+		return maxMultiplier
+	}
+	return m
+}
+
+func (g *Game) onPlayerDamaged() {
+	g.combo = 0
+	g.comboTimer = 0
+	g.sectionDamaged = true
 }
 
 func (g *Game) spawnDrop(e *Enemy) {
@@ -328,10 +470,37 @@ func (g *Game) collectPowerups() {
 }
 
 func (g *Game) removeDead() {
+	for _, e := range g.enemies {
+		if e.dead && e.formationID > 0 {
+			g.accountFormation(e)
+		}
+	}
+
 	g.bullets = filterAlive(g.bullets, func(b *Bullet) bool { return !b.dead })
 	g.enemies = filterAlive(g.enemies, func(e *Enemy) bool { return !e.dead })
 	g.enemyBullets = filterAlive(g.enemyBullets, func(b *EnemyBullet) bool { return !b.dead })
 	g.powerups = filterAlive(g.powerups, func(p *Powerup) bool { return !p.dead })
+}
+
+// accountFormation concede bônus quando toda uma formação é destruída sem
+// que nenhum de seus membros escape da tela.
+func (g *Game) accountFormation(e *Enemy) {
+	t := g.formations[e.formationID]
+	if t == nil {
+		return
+	}
+	if e.escaped {
+		t.escaped++
+	} else {
+		t.killed++
+	}
+	if t.killed+t.escaped < t.total {
+		return
+	}
+	if t.escaped == 0 {
+		g.score += formationBonus
+	}
+	delete(g.formations, e.formationID)
 }
 
 // filterAlive mantém apenas os itens aprovados por keep, reaproveitando o array
@@ -367,6 +536,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 	g.player.draw(screen)
 
+	if g.bombEffectTimer > 0 {
+		g.drawBombEffect(screen)
+	}
+
 	g.drawHUD(screen)
 
 	if g.level.announceTimer > 0 && g.level.announce != "" {
@@ -387,14 +560,32 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 }
 
+// drawBombEffect desenha o dragão ancestral atravessando a tela de baixo p/ cima.
+func (g *Game) drawBombEffect(screen *ebiten.Image) {
+	progress := 1 - float64(g.bombEffectTimer)/float64(bombEffectDuration)
+	y := float32(ScreenHeight - progress*(ScreenHeight+60))
+	body := color.RGBA{0xff, 0xd0, 0x60, 0xc0}
+	vector.DrawFilledRect(screen, 0, y, ScreenWidth, 24, body, false)
+	wing := color.RGBA{0xff, 0xa0, 0x30, 0xa0}
+	vector.DrawFilledRect(screen, 0, y-10, ScreenWidth, 6, wing, false)
+	vector.DrawFilledRect(screen, 0, y+28, ScreenWidth, 6, wing, false)
+}
+
 func (g *Game) drawHUD(screen *ebiten.Image) {
 	ebitenutil.DebugPrintAt(screen, "SCORE "+itoa(g.score), 4, 4)
-	ebitenutil.DebugPrintAt(screen, "VIDA "+itoa(g.player.health), 4, 16)
+	ebitenutil.DebugPrintAt(screen, "HIGH "+itoa(g.highScore), 4, 16)
+	if g.multiplier() > 1 {
+		ebitenutil.DebugPrintAt(screen, "x"+itoa(g.multiplier()), 4, 28)
+	}
+
+	g.drawHealthBar(screen)
+	ebitenutil.DebugPrintAt(screen, "VIDAS "+itoa(g.lives), 4, ScreenHeight-28)
+	ebitenutil.DebugPrintAt(screen, "BOMBA "+itoa(g.bombCharges), 4, ScreenHeight-16)
 
 	weapon := weaponName(g.player.weapon) + " Nv" + itoa(g.player.weaponLevel)
-	ebitenutil.DebugPrintAt(screen, weapon, 4, ScreenHeight-16)
+	ebitenutil.DebugPrintAt(screen, weapon, ScreenWidth-len(weapon)*6-4, ScreenHeight-16)
 	if g.player.hasShield() {
-		ebitenutil.DebugPrintAt(screen, "ESCUDO", ScreenWidth-46, ScreenHeight-16)
+		ebitenutil.DebugPrintAt(screen, "ESCUDO", ScreenWidth-46, ScreenHeight-28)
 	}
 
 	// Barra de progresso discreta na borda superior.
@@ -404,6 +595,18 @@ func (g *Game) drawHUD(screen *ebiten.Image) {
 
 	name := g.level.sectionName()
 	ebitenutil.DebugPrintAt(screen, name, ScreenWidth-len(name)*6-4, 4)
+}
+
+// drawHealthBar mostra os pontos de vida como pequenos blocos.
+func (g *Game) drawHealthBar(screen *ebiten.Image) {
+	const pip = 8
+	for i := 0; i < maxHealth; i++ {
+		c := color.RGBA{0x40, 0x20, 0x20, 0xff}
+		if i < g.player.health {
+			c = color.RGBA{0xe0, 0x50, 0x50, 0xff}
+		}
+		vector.DrawFilledRect(screen, float32(60+i*(pip+2)), 4, pip, pip, c, false)
+	}
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {

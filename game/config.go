@@ -4,6 +4,7 @@ package game
 const (
 	initialHealth = 3
 	maxHealth     = 5
+	startingLives = 3
 
 	playerSize           = 16
 	playerHitboxSize     = 4
@@ -13,8 +14,24 @@ const (
 	bulletInset         = 3
 	muzzleFlashDuration = 4
 
-	invincibilityDuration = 90 // frames (~1.5s a 60 TPS)
-	invincibilityBlink    = 6  // frames por ciclo de piscada
+	invincibilityDuration = 90  // frames (~1.5s a 60 TPS)
+	invincibilityBlink    = 6   // frames por ciclo de piscada
+	respawnInvincibility  = 150 // invencibilidade ao reaparecer
+)
+
+// Habilidade especial (Invocação Ancestral) e pontuação.
+const (
+	bombStartCharges   = 2
+	bombDamage         = 999
+	bombInvincibility  = 120
+	bombEffectDuration = 45
+
+	formationBonus    = 60
+	waveNoDamageBonus = 200
+
+	comboWindow   = 180 // frames sem eliminar até o combo decair
+	comboStep     = 5   // eliminações por nível de multiplicador
+	maxMultiplier = 4
 )
 
 // Configurações de inimigos e projéteis inimigos.
@@ -49,7 +66,7 @@ const (
 	gargoyleFireInterval   = 40
 
 	wyvernSize         = 24
-	wyvernHealth       = 10
+	wyvernHealth       = 8
 	wyvernScore        = 100
 	wyvernDamage       = 1
 	wyvernDescend      = 0.35
@@ -98,6 +115,6 @@ const (
 	powerupSize  = 10
 	powerupSpeed = 1.0
 
-	dropChance     = 0.18
+	dropChance     = 0.2
 	shieldDuration = 480 // ~8s a 60 TPS
 )

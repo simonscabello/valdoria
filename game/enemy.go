@@ -29,19 +29,21 @@ type enemyBehavior interface {
 }
 
 type Enemy struct {
-	kind     enemyKind
-	x, y     float64
-	w, h     float64
-	health   int
-	score    int
-	damage   int
-	dead     bool
-	hitFlash int
-	hasDrop  bool
-	drop     powerupType
-	color    color.RGBA
-	accent   color.RGBA
-	behavior enemyBehavior
+	kind        enemyKind
+	x, y        float64
+	w, h        float64
+	health      int
+	score       int
+	damage      int
+	dead        bool
+	escaped     bool
+	hitFlash    int
+	hasDrop     bool
+	drop        powerupType
+	formationID int
+	color       color.RGBA
+	accent      color.RGBA
+	behavior    enemyBehavior
 }
 
 func (e *Enemy) update(ctx *enemyContext) {

@@ -46,10 +46,11 @@ go test ./...
 | Mover               | `W` `A` `S` `D` ou setas       |
 | Modo de precisão    | Segurar `Shift`                |
 | Atirar              | `Espaço` (contínuo ao segurar) |
+| Invocação Ancestral (bomba) | `X` ou `Ctrl`          |
 | Pausar / Despausar  | `Esc`                          |
 | Reiniciar           | `Enter` (na tela de Game Over) |
 | Forçar inimigo (debug) | `1` corvos · `2` harpia · `3` gárgula · `4` wyvern |
-| Gerar power-up (dev)   | `Z` luz · `X` fogo · `C` gelo · `V` cura · `B` escudo |
+| Gerar power-up (dev)   | `Z` luz · `F` fogo · `C` gelo · `V` cura · `B` escudo |
 | Acelerar a fase (debug) | `Tab` |
 
 ## Funcionalidades implementadas
@@ -78,7 +79,9 @@ go test ./...
   - **Lanças de Gelo**: lentas e fortes (1 → 2 → 3 projéteis), atravessam inimigos (mais perfuração no nível 3).
 - **Power-ups** que caem de inimigos e saem da tela se não coletados: Runa da Luz/Fogo/Gelo (coletar a runa da arma atual sobe o nível, outra runa troca a arma para o nível 1, máximo 3), Cura (limitada à vida máxima) e Escudo temporário (absorve um ataque). Chance de drop configurável e alguns drops garantidos por onda.
 - HUD com arma, nível e estado do escudo.
-- Sistema básico de vida e pontuação.
+- **Vidas e barra de energia**: barra de HP; ao zerar, perde uma vida e reaparece (limpa os projéteis inimigos, ganha invencibilidade, volta a uma área segura e perde apenas um nível de arma). Início com três vidas; sem vidas, Game Over.
+- **Invocação Ancestral (bomba)**: `X`/`Ctrl` limpa os projéteis inimigos, causa dano elevado a todos os inimigos, deixa o jogador invulnerável por instantes e exibe um dragão atravessando a tela. Começa com duas cargas (mostradas no HUD) e não pode ser usada em pausa/Game Over.
+- **Pontuação avançada**: pontos por tipo de inimigo, bônus por destruir uma formação completa, bônus por concluir um trecho sem sofrer dano, multiplicador por eliminações consecutivas (decai sem eliminações ou ao sofrer dano) e maior pontuação local da sessão.
 - Tela de Game Over e reinício com `Enter`.
 
 A lógica roda em TPS fixo do Ebitengine (60), independente da taxa de renderização.
@@ -114,7 +117,8 @@ valdoria/
     ├── game_test.go    # testes das funções puras (colisão, remoção, HUD)
     ├── enemy_test.go   # testes de inimigos (dano, morte, pontuação, mira, movimento)
     ├── level_test.go   # testes da fase (eventos, ondas, trechos, pausa, chefe)
-    └── weapon_test.go  # testes de armas/power-ups (troca, nível, cura, escudo, perfuração, leque)
+    ├── weapon_test.go  # testes de armas/power-ups (troca, nível, cura, escudo, perfuração, leque)
+    └── survival_test.go # testes de vidas, respawn, bomba, multiplicador e bônus
 ```
 
 ## Desenvolvimento e testes da fase

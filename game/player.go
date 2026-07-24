@@ -143,13 +143,28 @@ func (p *Player) canBeHit() bool {
 	return p.invincible == 0
 }
 
-func (p *Player) hit(damage int) {
+// hit aplica dano e devolve true apenas quando a vida realmente diminuiu.
+func (p *Player) hit(damage int) bool {
 	p.invincible = invincibilityDuration
 	if p.shieldTimer > 0 {
 		p.shieldTimer = 0
-		return
+		return false
 	}
 	p.health -= damage
+	return true
+}
+
+// respawn recoloca o jogador em área segura, restaura a vida, concede
+// invencibilidade e reduz apenas um nível da arma atual.
+func (p *Player) respawn() {
+	p.x = ScreenWidth/2 - playerSize/2
+	p.y = ScreenHeight - playerSize*3
+	p.health = maxHealth
+	p.invincible = respawnInvincibility
+	p.shieldTimer = 0
+	if p.weaponLevel > 1 {
+		p.weaponLevel--
+	}
 }
 
 func (p *Player) centerX() float64 { return p.x + playerSize/2 }

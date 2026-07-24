@@ -90,12 +90,13 @@ type levelSection struct {
 }
 
 type Level struct {
-	events        []*waveEvent
-	sections      []levelSection
-	tick          int
-	section       int
-	announce      string
-	announceTimer int
+	events          []*waveEvent
+	sections        []levelSection
+	tick            int
+	section         int
+	announce        string
+	announceTimer   int
+	nextFormationID int
 }
 
 func newLevel() *Level {
@@ -187,6 +188,13 @@ func (l *Level) update() []*Enemy {
 			if ev.hasDrop && ev.spawned == 0 && len(newEnemies) > 0 {
 				newEnemies[0].hasDrop = true
 				newEnemies[0].drop = ev.drop
+			}
+			// Grupos com mais de um inimigo contam como formação para o bônus.
+			if len(newEnemies) > 1 {
+				l.nextFormationID++
+				for _, e := range newEnemies {
+					e.formationID = l.nextFormationID
+				}
 			}
 			spawned = append(spawned, newEnemies...)
 			ev.spawned++
