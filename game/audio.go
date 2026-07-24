@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"log"
 	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2/audio"
 	"github.com/hajimehoshi/ebiten/v2/audio/vorbis"
@@ -96,12 +99,40 @@ func newAudioManager() *AudioManager {
 	if !audioEnabled {
 		return a
 	}
+	if !audioAvailable() {
+		log.Println("audio desativado: nenhum dispositivo de som disponivel")
+		return a
+	}
 	if sharedContext == nil {
 		sharedContext = audio.NewContext(audioSampleRate)
 	}
 	a.ctx = sharedContext
 	a.buildLibrary()
 	return a
+}
+
+// audioAvailable evita abrir o dispositivo de som quando ele não existe (por
+// exemplo, WSL2 ou servidores sem áudio), o que quebraria a inicialização.
+// No Linux o oto usa ALSA, então exigimos um dispositivo PCM de reprodução
+// real (arquivos pcm*p em /dev/snd). Pode ser forçado com VALDORIA_NOAUDIO=1.
+func audioAvailable() bool {
+	if v := os.Getenv("VALDORIA_NOAUDIO"); v == "1" || v == "true" {
+		return false
+	}
+	if runtime.GOOS != "linux" {
+		return true
+	}
+	entries, err := os.ReadDir("/dev/snd")
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasPrefix(name, "pcm") && strings.HasSuffix(name, "p") {
+			return true
+		}
+	}
+	return false
 }
 
 // buildLibrary prepara todos os efeitos e trilhas, preferindo arquivos livres

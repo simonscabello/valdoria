@@ -174,10 +174,11 @@ vibração fica no menu inicial. Assets de áudio opcionais são lidos de
 ## Tratamento de ausência de arquivos
 
 O áudio é gerado proceduralmente; se os arquivos em `assets/audio/` não existirem
-ou não puderem ser decodificados, o jogo usa os sons gerados sem falhar. Se o
-dispositivo de áudio não puder ser aberto, o jogo segue sem som. Erros na
-inicialização da janela são registrados no log e encerram o processo com uma
-mensagem clara (prefixo `[valdoria]`).
+ou não puderem ser decodificados, o jogo usa os sons gerados sem falhar. Se não
+houver dispositivo de som disponível (por exemplo, WSL2 sem áudio), o áudio é
+desativado automaticamente e o jogo segue sem som — dá para forçar isso com
+`VALDORIA_NOAUDIO=1`. Erros na inicialização da janela são registrados no log e
+encerram o processo com uma mensagem clara (prefixo `[valdoria]`).
 
 ## Licença
 
