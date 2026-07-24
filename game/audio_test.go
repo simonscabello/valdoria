@@ -69,3 +69,33 @@ func TestVolumeClamped(t *testing.T) {
 		t.Errorf("volume de efeitos deveria ser limitado a 0, foi %v", a.sfxVol)
 	}
 }
+
+func TestNudgeVolumeSnapsToSteps(t *testing.T) {
+	a := newAudioManager()
+	a.setMusicVolume(0.5)
+	a.nudgeMusicVolume(volumeStep)
+	if volumePercent(a.musicVol) != 60 {
+		t.Errorf("música deveria ir a 60%%, foi %d%%", volumePercent(a.musicVol))
+	}
+	a.nudgeMusicVolume(-volumeStep * 10)
+	if a.musicVol != 0 {
+		t.Errorf("música deveria ir a 0, foi %v", a.musicVol)
+	}
+}
+
+func TestBiomeMusicIDsAreDistinct(t *testing.T) {
+	ids := []musicID{
+		musicFields, musicVillage, musicWalls, musicCastle,
+		musicForest, musicSwamp, musicCanyon, musicLair,
+	}
+	seen := map[musicID]bool{}
+	for _, id := range ids {
+		if id == musicNone || id == musicMenu || id == musicPhase || id == musicBoss {
+			t.Errorf("trilha de bioma %d colide com trilha de sistema", id)
+		}
+		if seen[id] {
+			t.Errorf("trilha de bioma duplicada: %d", id)
+		}
+		seen[id] = true
+	}
+}

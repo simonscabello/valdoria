@@ -1,6 +1,9 @@
 package game
 
-import "image/color"
+import (
+	"image/color"
+	"math"
+)
 
 type formation int
 
@@ -111,12 +114,13 @@ func clampSpawnX(x, size float64) float64 {
 }
 
 // sectionDef descreve um trecho da fase: quando começa, seu nome, o aviso
-// exibido e o tema visual do bioma.
+// exibido, o tema visual do bioma e a trilha de fundo.
 type sectionDef struct {
 	startTick int
 	name      string
 	warning   string
 	theme     bgTheme
+	music     musicID
 }
 
 // waveDef é a descrição declarativa (dados) de uma aparição agendada.
@@ -161,8 +165,10 @@ type stageBuilder struct{ d stageDef }
 
 func newStageBuilder(name string) *stageBuilder { return &stageBuilder{d: stageDef{name: name}} }
 
-func (b *stageBuilder) section(start int, name, warning string, th bgTheme) {
-	b.d.sections = append(b.d.sections, sectionDef{startTick: start, name: name, warning: warning, theme: th})
+func (b *stageBuilder) section(start int, name, warning string, th bgTheme, music musicID) {
+	b.d.sections = append(b.d.sections, sectionDef{
+		startTick: start, name: name, warning: warning, theme: th, music: music,
+	})
 }
 
 func (b *stageBuilder) wave(start int, kind enemyKind, count, interval int, f formation, x float64, fromLeft bool) {
@@ -190,6 +196,38 @@ type Level struct {
 	nextFormationID int
 }
 
+// scaleWaveCount aumenta a quantidade de aparições da onda (~densidade da campanha).
+func scaleWaveCount(count int) int {
+	if count <= 1 {
+		return count
+	}
+	scaled := int(math.Round(float64(count) * campaignDensityScale))
+	if scaled < count {
+		return count
+	}
+	return scaled
+}
+
+// scaleWaveInterval encurta o intervalo entre aparições, sem acelerar abaixo de
+// ~2/3 do valor original (evita rajadas impossíveis).
+func scaleWaveInterval(interval int) int {
+	if interval <= 0 {
+		return interval
+	}
+	scaled := int(math.Round(float64(interval) / campaignDensityScale))
+	floor := (interval * 2) / 3
+	if floor < 1 {
+		floor = 1
+	}
+	if scaled < floor {
+		return floor
+	}
+	if scaled < 1 {
+		return 1
+	}
+	return scaled
+}
+
 // newLevelFromStage constrói o estado de execução de uma fase a partir da sua
 // descrição declarativa.
 func newLevelFromStage(def *stageDef) *Level {
@@ -200,8 +238,10 @@ func newLevelFromStage(def *stageDef) *Level {
 	}
 	for _, wd := range def.waves {
 		l.events = append(l.events, &waveEvent{
-			startTick: wd.startTick, kind: wd.kind, count: wd.count,
-			interval: wd.interval, formation: wd.formation, spawnX: wd.spawnX,
+			startTick: wd.startTick, kind: wd.kind,
+			count:    scaleWaveCount(wd.count),
+			interval: scaleWaveInterval(wd.interval),
+			formation: wd.formation, spawnX: wd.spawnX,
 			fromLeft: wd.fromLeft, hasDrop: wd.hasDrop, drop: wd.drop,
 		})
 	}
@@ -298,6 +338,16 @@ func (l *Level) theme() bgTheme {
 		return sectionThemes[0]
 	}
 	return l.sections[l.section].theme
+}
+
+func (l *Level) music() musicID {
+	if l.section < 0 || l.section >= len(l.sections) {
+		return musicPhase
+	}
+	if m := l.sections[l.section].music; m != musicNone {
+		return m
+	}
+	return musicPhase
 }
 
 func (l *Level) background() color.RGBA {

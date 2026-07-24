@@ -13,14 +13,14 @@ func campaignStages() []*stageDef {
 }
 
 // stage1 — O Cerco de Eldoria: introdução que sobe de corvos a wyverns.
-// Densidade alta e fuga pela base pune — inimigos descem um pouco mais lentos.
+// Densidade alta — inimigos descem um pouco mais lentos para dar tempo de mira.
 func stage1() *stageDef {
 	b := newStageBuilder("O Cerco de Eldoria")
 
-	b.section(0, "Campos do reino", "", sectionThemes[0])
-	b.section(1500, "Vila atacada", "A vila esta sob ataque!", sectionThemes[1])
-	b.section(3000, "Muralhas", "Aproximando-se das muralhas", sectionThemes[2])
-	b.section(4500, "Rumo ao castelo", "O castelo se aproxima...", sectionThemes[3])
+	b.section(0, "Campos do reino", "", sectionThemes[0], musicFields)
+	b.section(1500, "Vila atacada", "A vila esta sob ataque!", sectionThemes[1], musicVillage)
+	b.section(3000, "Muralhas", "Aproximando-se das muralhas", sectionThemes[2], musicWalls)
+	b.section(4500, "Rumo ao castelo", "O castelo se aproxima...", sectionThemes[3], musicCastle)
 
 	// Campos: abre no centro, logo vira pressão em duas pistas + formações.
 	b.wave(60, kindCrow, 5, 38, formationSingle, 115, false)
@@ -83,8 +83,8 @@ func stage1() *stageDef {
 func stage2() *stageDef {
 	b := newStageBuilder("A Floresta Corrompida")
 
-	b.section(0, "Bosque sombrio", "Adentrando a floresta corrompida", themeForest)
-	b.section(1600, "Pantano corrompido", "A corrupcao se aprofunda...", themeSwamp)
+	b.section(0, "Bosque sombrio", "Adentrando a floresta corrompida", themeForest, musicForest)
+	b.section(1600, "Pantano corrompido", "A corrupcao se aprofunda...", themeSwamp, musicSwamp)
 
 	b.wave(40, kindHarpy, 5, 42, formationSingle, 50, false)
 	b.drop(powerIce)
@@ -122,8 +122,8 @@ func stage2() *stageDef {
 func stage3() *stageDef {
 	b := newStageBuilder("O Covil de Vharak")
 
-	b.section(0, "Desfiladeiro", "O covil do dragao se aproxima", themeCanyon)
-	b.section(1900, "Covil do dragao", "Vharak aguarda...", themeLair)
+	b.section(0, "Desfiladeiro", "O covil do dragao se aproxima", themeCanyon, musicCanyon)
+	b.section(1900, "Covil do dragao", "Vharak aguarda...", themeLair, musicLair)
 
 	b.wave(50, kindBallista, 1, 0, formationSingle, 60, false)
 	b.drop(powerLight)

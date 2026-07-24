@@ -105,12 +105,6 @@ func aimTelegraph(e *Enemy, fireCD int) {
 func (e *Enemy) centerX() float64 { return e.x + e.w/2 }
 func (e *Enemy) centerY() float64 { return e.y + e.h/2 }
 
-// crossedBottom indica que o inimigo passou pela base da tela (fuga vertical).
-// Saídas laterais (gárgula) não contam — só a fuga "por baixo" pune o jogador.
-func (e *Enemy) crossedBottom() bool {
-	return e.y > ScreenHeight
-}
-
 // offScreen remove qualquer inimigo que saia bem além da área visível por
 // qualquer lado, cobrindo tanto quem desce quanto a gárgula que sai pela lateral.
 func (e *Enemy) offScreen() bool {

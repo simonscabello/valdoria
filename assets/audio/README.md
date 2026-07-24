@@ -17,11 +17,19 @@ A busca é feita nesta ordem (`.ogg` antes de `.wav`). Qualquer taxa de amostrag
 
 ### Músicas (em laço contínuo)
 
-| Arquivo         | Uso                    |
-| --------------- | ---------------------- |
-| `music_menu`    | Menu inicial           |
-| `music_phase`   | Durante a fase         |
-| `music_boss`    | Combate contra o chefe |
+| Arquivo          | Uso                         |
+| ---------------- | --------------------------- |
+| `music_menu`     | Menu inicial                |
+| `music_phase`    | Sobrevivência / fallback    |
+| `music_boss`     | Combate contra o chefe      |
+| `music_fields`   | Campos do reino (fase 1)    |
+| `music_village`  | Vila atacada (fase 1)       |
+| `music_walls`    | Muralhas (fase 1)           |
+| `music_castle`   | Rumo ao castelo (fase 1)    |
+| `music_forest`   | Bosque sombrio (fase 2)     |
+| `music_swamp`    | Pântano corrompido (fase 2) |
+| `music_canyon`   | Desfiladeiro (fase 3)       |
+| `music_lair`     | Covil do dragão (fase 3)    |
 
 ### Efeitos sonoros
 

@@ -45,8 +45,30 @@ func TestStagesAreDense(t *testing.T) {
 	// contínuo de inimigos (o problema relatado era "poucos monstros").
 	for _, def := range campaignStages() {
 		got := stageSpawnCount(def)
-		if got < 70 {
+		if got < 100 {
 			t.Errorf("fase %q gera poucos inimigos (%d); densidade insuficiente", def.name, got)
+		}
+	}
+}
+
+func TestDensityScaleIncreasesCount(t *testing.T) {
+	if scaleWaveCount(5) <= 5 {
+		t.Errorf("count 5 deveria crescer com densidade, foi %d", scaleWaveCount(5))
+	}
+	if scaleWaveCount(1) != 1 {
+		t.Errorf("count 1 (formação única) não deveria mudar, foi %d", scaleWaveCount(1))
+	}
+	if scaleWaveInterval(40) >= 40 {
+		t.Errorf("intervalo 40 deveria encolher, foi %d", scaleWaveInterval(40))
+	}
+}
+
+func TestSectionsHaveBiomeMusic(t *testing.T) {
+	for _, def := range campaignStages() {
+		for _, sec := range def.sections {
+			if sec.music == musicNone || sec.music == musicMenu || sec.music == musicBoss {
+				t.Errorf("seção %q da fase %q sem trilha de bioma (music=%d)", sec.name, def.name, sec.music)
+			}
 		}
 	}
 }

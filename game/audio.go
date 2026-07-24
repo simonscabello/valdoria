@@ -59,9 +59,19 @@ type musicID int
 const (
 	musicNone musicID = iota
 	musicMenu
-	musicPhase
+	musicPhase // sobrevivência / fallback
 	musicBoss
+	musicFields
+	musicVillage
+	musicWalls
+	musicCastle
+	musicForest
+	musicSwamp
+	musicCanyon
+	musicLair
 )
+
+const volumeStep = 0.1
 
 // AudioManager centraliza reprodução de música e efeitos, volumes e mudo.
 type AudioManager struct {
@@ -157,6 +167,14 @@ func (a *AudioManager) buildLibrary() {
 	a.music[musicMenu] = a.loadMusic("music_menu", genMusicMenu)
 	a.music[musicPhase] = a.loadMusic("music_phase", genMusicPhase)
 	a.music[musicBoss] = a.loadMusic("music_boss", genMusicBoss)
+	a.music[musicFields] = a.loadMusic("music_fields", genMusicFields)
+	a.music[musicVillage] = a.loadMusic("music_village", genMusicVillage)
+	a.music[musicWalls] = a.loadMusic("music_walls", genMusicWalls)
+	a.music[musicCastle] = a.loadMusic("music_castle", genMusicCastle)
+	a.music[musicForest] = a.loadMusic("music_forest", genMusicForest)
+	a.music[musicSwamp] = a.loadMusic("music_swamp", genMusicSwamp)
+	a.music[musicCanyon] = a.loadMusic("music_canyon", genMusicCanyon)
+	a.music[musicLair] = a.loadMusic("music_lair", genMusicLair)
 }
 
 func (a *AudioManager) update() {
@@ -255,6 +273,29 @@ func (a *AudioManager) toggleMute() {
 func (a *AudioManager) setMasterVolume(v float64) { a.master = clamp01(v) }
 func (a *AudioManager) setMusicVolume(v float64)  { a.musicVol = clamp01(v) }
 func (a *AudioManager) setSFXVolume(v float64)    { a.sfxVol = clamp01(v) }
+
+func (a *AudioManager) nudgeMusicVolume(delta float64) {
+	if a == nil {
+		return
+	}
+	a.musicVol = clamp01(snapVolume(a.musicVol + delta))
+}
+
+func (a *AudioManager) nudgeSFXVolume(delta float64) {
+	if a == nil {
+		return
+	}
+	a.sfxVol = clamp01(snapVolume(a.sfxVol + delta))
+}
+
+// snapVolume alinha o volume aos degraus de volumeStep (ex.: 0.5, 0.6…).
+func snapVolume(v float64) float64 {
+	return math.Round(v/volumeStep) * volumeStep
+}
+
+func volumePercent(v float64) int {
+	return int(math.Round(clamp01(v) * 100))
+}
 
 // loadSFX devolve um player pronto: arquivo livre, se existir, ou som gerado.
 func (a *AudioManager) loadSFX(name string, gen func(sampleRate int) []float64) *audio.Player {
@@ -528,5 +569,61 @@ func genMusicBoss(sr int) []float64 {
 	return sequence(sr, waveSquare, 0.18, [][2]float64{
 		{196, 0.22}, {233, 0.22}, {196, 0.22}, {174, 0.22},
 		{220, 0.22}, {262, 0.22}, {220, 0.22}, {165, 0.22},
+	})
+}
+
+func genMusicFields(sr int) []float64 {
+	return sequence(sr, waveSine, 0.16, [][2]float64{
+		{392, 0.28}, {440, 0.28}, {523, 0.28}, {587, 0.28},
+		{523, 0.28}, {440, 0.28}, {392, 0.28}, {349, 0.28},
+	})
+}
+
+func genMusicVillage(sr int) []float64 {
+	return sequence(sr, waveSquare, 0.14, [][2]float64{
+		{311, 0.20}, {370, 0.20}, {311, 0.20}, {277, 0.20},
+		{349, 0.20}, {415, 0.20}, {349, 0.20}, {277, 0.20},
+	})
+}
+
+func genMusicWalls(sr int) []float64 {
+	return sequence(sr, waveSquare, 0.15, [][2]float64{
+		{220, 0.30}, {262, 0.15}, {220, 0.30}, {196, 0.15},
+		{247, 0.30}, {294, 0.15}, {247, 0.30}, {185, 0.15},
+	})
+}
+
+func genMusicCastle(sr int) []float64 {
+	return sequence(sr, waveSine, 0.17, [][2]float64{
+		{175, 0.35}, {208, 0.35}, {233, 0.35}, {262, 0.35},
+		{233, 0.35}, {208, 0.35}, {175, 0.35}, {156, 0.35},
+	})
+}
+
+func genMusicForest(sr int) []float64 {
+	return sequence(sr, waveSine, 0.14, [][2]float64{
+		{262, 0.32}, {294, 0.32}, {349, 0.32}, {330, 0.32},
+		{294, 0.32}, {247, 0.32}, {262, 0.32}, {220, 0.32},
+	})
+}
+
+func genMusicSwamp(sr int) []float64 {
+	return sequence(sr, waveSquare, 0.13, [][2]float64{
+		{185, 0.36}, {208, 0.18}, {196, 0.36}, {233, 0.18},
+		{175, 0.36}, {220, 0.18}, {165, 0.36}, {196, 0.18},
+	})
+}
+
+func genMusicCanyon(sr int) []float64 {
+	return sequence(sr, waveSine, 0.15, [][2]float64{
+		{147, 0.40}, {165, 0.20}, {185, 0.40}, {196, 0.20},
+		{175, 0.40}, {156, 0.20}, {147, 0.40}, {131, 0.20},
+	})
+}
+
+func genMusicLair(sr int) []float64 {
+	return sequence(sr, waveSquare, 0.17, [][2]float64{
+		{110, 0.24}, {131, 0.24}, {147, 0.24}, {131, 0.24},
+		{123, 0.24}, {147, 0.24}, {165, 0.24}, {110, 0.24},
 	})
 }

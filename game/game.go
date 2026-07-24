@@ -29,6 +29,7 @@ type state int
 const (
 	stateMenu state = iota
 	stateControls
+	stateOptions
 	statePlaying
 	statePaused
 	stateBoss
@@ -98,7 +99,9 @@ type Game struct {
 	audio *AudioManager
 }
 
-const menuItemCount = 6
+const menuItemCount = 7
+const optionsItemCount = 3
+const pauseItemCount = 3
 
 var gameOverOptions = []string{"Tentar novamente", "Voltar ao menu"}
 var victoryOptions = []string{"Jogar novamente", "Voltar ao menu"}
@@ -118,6 +121,8 @@ func New() *Game {
 	g.save = loadSave()
 	setDifficulty(g.save.Difficulty)
 	g.audio.muted = g.save.Muted
+	g.audio.setMusicVolume(g.save.MusicVolume)
+	g.audio.setSFXVolume(g.save.SFXVolume)
 
 	g.reset()
 
@@ -137,6 +142,9 @@ func (g *Game) persist() {
 	g.save.Difficulty = currentDifficulty
 	g.save.Shake = g.shakeSetting
 	g.save.Muted = g.audio.muted
+	g.save.MusicVolume = g.audio.musicVol
+	g.save.SFXVolume = g.audio.sfxVol
+	g.save.VolumesSet = true
 	g.save.write()
 }
 
@@ -240,8 +248,11 @@ func (g *Game) Update() error {
 	case stateControls:
 		g.updateControls()
 		return nil
+	case stateOptions:
+		g.updateOptions()
+		return nil
 	case statePaused:
-		g.handlePauseToggle()
+		g.updatePaused()
 		return nil
 	case stateGameOver:
 		g.updateEndScreen(gameOverOptions)
@@ -256,7 +267,7 @@ func (g *Game) Update() error {
 }
 
 // updateMusicForState escolhe a trilha conforme a tela atual. A pausa mantém a
-// trilha do estado que estava em andamento.
+// trilha do estado que estava em andamento; na campanha a música segue o bioma.
 func (g *Game) updateMusicForState() {
 	st := g.state
 	if st == statePaused {
@@ -264,7 +275,11 @@ func (g *Game) updateMusicForState() {
 	}
 	switch st {
 	case statePlaying:
-		g.audio.playMusic(musicPhase)
+		if g.mode == modeSurvival {
+			g.audio.playMusic(musicPhase)
+			return
+		}
+		g.audio.playMusic(g.level.music())
 	case stateBoss:
 		g.audio.playMusic(musicBoss)
 	case stateGameOver, stateVictory:
@@ -291,12 +306,16 @@ func (g *Game) updateMenu() error {
 	case 2:
 		g.cycleDifficulty()
 	case 3:
-		g.state = stateControls
+		g.state = stateOptions
+		g.menuIndex = 0
 		g.fade = fadeDuration
 	case 4:
+		g.state = stateControls
+		g.fade = fadeDuration
+	case 5:
 		g.cycleShake()
 		g.persist()
-	case 5:
+	case 6:
 		return ebiten.Termination
 	}
 	return nil
@@ -312,6 +331,71 @@ func (g *Game) updateControls() {
 	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
 		g.enterMenu()
 	}
+}
+
+func (g *Game) updateOptions() {
+	g.moveMenuSelection(optionsItemCount)
+	g.handleVolumeKeys(0, 1)
+	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		g.enterMenu()
+		return
+	}
+	if !inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+		return
+	}
+	g.audio.playSFX(sfxMenu)
+	if g.menuIndex == 2 {
+		g.enterMenu()
+	}
+}
+
+func (g *Game) updatePaused() {
+	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		g.state = g.resumeState
+		return
+	}
+	g.moveMenuSelection(pauseItemCount)
+	g.handleVolumeKeys(1, 2)
+	if !inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+		return
+	}
+	g.audio.playSFX(sfxMenu)
+	if g.menuIndex == 0 {
+		g.state = g.resumeState
+	}
+}
+
+// handleVolumeKeys ajusta música/SFX com ←→ quando o índice atual está nas
+// linhas musicIdx ou sfxIdx. Persiste a preferência ao mudar.
+func (g *Game) handleVolumeKeys(musicIdx, sfxIdx int) {
+	delta := 0.0
+	if inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft) || inpututil.IsKeyJustPressed(ebiten.KeyA) {
+		delta = -volumeStep
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyArrowRight) || inpututil.IsKeyJustPressed(ebiten.KeyD) {
+		delta = volumeStep
+	}
+	if delta == 0 {
+		return
+	}
+	switch g.menuIndex {
+	case musicIdx:
+		g.audio.nudgeMusicVolume(delta)
+	case sfxIdx:
+		g.audio.nudgeSFXVolume(delta)
+	default:
+		return
+	}
+	g.audio.playSFX(sfxMenu)
+	g.persist()
+}
+
+func (g *Game) musicVolumeLabel() string {
+	return "Musica: " + itoa(volumePercent(g.audio.musicVol)) + "%"
+}
+
+func (g *Game) sfxVolumeLabel() string {
+	return "Efeitos: " + itoa(volumePercent(g.audio.sfxVol)) + "%"
 }
 
 func (g *Game) updateEndScreen(options []string) {
@@ -533,14 +617,17 @@ func (g *Game) spawnSurvival() {
 		return
 	}
 	minute := g.elapsedTicks / 3600
-	interval := 58 - minute*7
-	if interval < 20 {
-		interval = 20
+	interval := 42 - minute*6
+	if interval < 16 {
+		interval = 16
 	}
 	g.survivalTimer = interval
 	g.spawnRandomEnemy(minute)
-	// A partir de ~1 min, às vezes um segundo inimigo entra junto para adensar.
-	if minute >= 1 && rng.Intn(2) == 0 {
+	// Chance de um segundo inimigo desde o início; a partir de 1 min, às vezes um terceiro.
+	if rng.Intn(2) == 0 {
+		g.spawnRandomEnemy(minute)
+	}
+	if minute >= 1 && rng.Intn(3) == 0 {
 		g.spawnRandomEnemy(minute)
 	}
 }
@@ -666,6 +753,7 @@ func (g *Game) handlePauseToggle() {
 	}
 	if g.state == statePlaying || g.state == stateBoss {
 		g.resumeState = g.state
+		g.menuIndex = 0
 		g.state = statePaused
 	}
 }
@@ -780,42 +868,13 @@ func (g *Game) updateEnemies() {
 		playerY: g.player.centerY(),
 		bullets: &g.enemyBullets,
 	}
-	leaked := false
 	for _, e := range g.enemies {
 		e.update(ctx)
-		if e.crossedBottom() {
-			e.escaped = true
-			e.dead = true
-			leaked = true
-			continue
-		}
 		if e.offScreen() {
 			e.escaped = true
 			e.dead = true
 		}
 	}
-	if leaked {
-		g.onEnemyLeaked()
-	}
-}
-
-// onEnemyLeaked: um ou mais inimigos passaram pela base da tela. Custa uma vida
-// (estilo shmup clássico). Durante invencibilidade, a fuga ainda remove o
-// inimigo, mas não empilha perdas em cascata.
-func (g *Game) onEnemyLeaked() {
-	if g.state != statePlaying && g.state != stateBoss {
-		return
-	}
-	if g.player.invincible > 0 {
-		return
-	}
-	g.sectionDamaged = true
-	g.combo = 0
-	g.comboTimer = 0
-	g.triggerDamageFlash()
-	g.addShake(shakeHitMagnitude)
-	g.audio.playSFX(sfxPlayerHit)
-	g.loseLife()
 }
 
 func (g *Game) updateEnemyBullets() {
@@ -1130,6 +1189,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		g.drawMenu(screen)
 	case stateControls:
 		g.drawControls(screen)
+	case stateOptions:
+		g.drawOptionsScreen(screen)
 	case stateGameOver:
 		g.drawGameOver(screen)
 	case stateVictory:
@@ -1247,11 +1308,18 @@ func (g *Game) drawOverlayHUD(screen *ebiten.Image) {
 	}
 
 	if g.state == statePaused {
-		const pw, ph = 88, 28
+		const pw, ph = 140, 92
 		px := float32(ScreenWidth/2 - pw/2)
 		py := float32(ScreenHeight/2 - ph/2)
 		drawUIPanel(screen, px, py, pw, ph)
-		drawTextCentered(screen, "PAUSADO", float64(ScreenHeight/2-5), uiHighlight)
+		drawTextCentered(screen, "PAUSADO", float64(ScreenHeight/2-38), uiHighlight)
+		options := []string{
+			"Continuar",
+			g.musicVolumeLabel(),
+			g.sfxVolumeLabel(),
+		}
+		g.drawOptions(screen, options, ScreenHeight/2-20)
+		drawTextCentered(screen, "A/D volume  Esc volta", float64(ScreenHeight/2+36), uiInkDim)
 	}
 }
 
@@ -1300,11 +1368,12 @@ func (g *Game) drawMenu(screen *ebiten.Image) {
 		"Iniciar jogo",
 		"Sobrevivencia",
 		"Dificuldade: " + difficultyName(currentDifficulty),
+		"Opcoes",
 		"Controles",
 		"Vibracao: " + shakeLevelName(g.shakeSetting),
 		"Sair",
 	}
-	g.drawOptions(screen, options, 100)
+	g.drawOptions(screen, options, 96)
 
 	if g.highScore > 0 || g.survivalBest > 0 {
 		drawCentered(screen, "Recorde "+itoa(g.highScore)+"  Sobrev. "+itoa(g.survivalBest), 258)
@@ -1325,12 +1394,28 @@ func (g *Game) drawControls(screen *ebiten.Image) {
 		"Espaco: disparar",
 		"X/Ctrl: invocacao",
 		"Escape: pausar",
+		"M: mudo",
 		"Enter: confirmar",
 	}
 	for i, l := range lines {
-		drawTextCentered(screen, l, float64(70+i*22), uiInk)
+		drawTextCentered(screen, l, float64(66+i*20), uiInk)
 	}
 	drawCentered(screen, "Enter/Esc volta", ScreenHeight-28)
+}
+
+func (g *Game) drawOptionsScreen(screen *ebiten.Image) {
+	g.drawStarsBackground(screen)
+	const margin = 12
+	drawUIPanel(screen, margin, 40, ScreenWidth-2*margin, 200)
+	drawCentered(screen, "OPCOES", 56)
+	options := []string{
+		g.musicVolumeLabel(),
+		g.sfxVolumeLabel(),
+		"Voltar",
+	}
+	g.drawOptions(screen, options, 100)
+	drawCentered(screen, "A/D ajusta volume", ScreenHeight-36)
+	drawCentered(screen, "Enter/Esc volta", ScreenHeight-22)
 }
 
 // reachedLabel descreve até onde o jogador avançou ao perder.

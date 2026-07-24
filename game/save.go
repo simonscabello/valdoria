@@ -17,10 +17,19 @@ type saveData struct {
 	Difficulty   difficultyLevel `json:"difficulty"`
 	Shake        shakeLevel      `json:"shake"`
 	Muted        bool            `json:"muted"`
+	MusicVolume  float64         `json:"music_volume"`
+	SFXVolume    float64         `json:"sfx_volume"`
+	VolumesSet   bool            `json:"volumes_set"`
 }
 
 func defaultSave() saveData {
-	return saveData{Difficulty: diffNormal, Shake: shakeFull}
+	return saveData{
+		Difficulty:  diffNormal,
+		Shake:       shakeFull,
+		MusicVolume: defaultMusicVolume,
+		SFXVolume:   defaultSFXVolume,
+		VolumesSet:  true,
+	}
 }
 
 // savePath devolve o caminho do arquivo de save no diretório de configuração do
@@ -67,6 +76,24 @@ func (s *saveData) sanitize() {
 	}
 	if s.SurvivalBest < 0 {
 		s.SurvivalBest = 0
+	}
+	if !s.VolumesSet {
+		s.MusicVolume = defaultMusicVolume
+		s.SFXVolume = defaultSFXVolume
+		s.VolumesSet = true
+		return
+	}
+	if s.MusicVolume < 0 {
+		s.MusicVolume = 0
+	}
+	if s.MusicVolume > 1 {
+		s.MusicVolume = 1
+	}
+	if s.SFXVolume < 0 {
+		s.SFXVolume = 0
+	}
+	if s.SFXVolume > 1 {
+		s.SFXVolume = 1
 	}
 }
 

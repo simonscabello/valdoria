@@ -48,12 +48,15 @@ const (
 	crowSize   = 10
 	crowHealth = 1
 	crowScore  = 10
-	crowSpeed  = 1.5 // mais lento: densidade alta + fuga pune, precisa de tempo de mira
+	crowSpeed  = 1.5 // mais lento: densidade alta, precisa de tempo de mira
 	crowDamage = 1
 
 	// Margem mínima das bordas para spawns "justos" (voadores/terrestres).
 	// Evita corvos impossíveis nos extremos da tela de 240px.
 	spawnFairMargin = 36
+
+	// Densidade da campanha: mais aparições e intervalos um pouco menores (~+45%).
+	campaignDensityScale = 1.45
 
 	harpySize         = 14
 	harpyHealth       = 3
