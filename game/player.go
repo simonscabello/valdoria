@@ -2,9 +2,19 @@ package game
 
 import (
 	"image/color"
+	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
+)
+
+var (
+	griffinBody   = color.RGBA{0xd0, 0xa8, 0x5a, 0xff}
+	griffinWing   = color.RGBA{0x9a, 0x78, 0x3a, 0xff}
+	griffinBeak   = color.RGBA{0xff, 0xd7, 0x4d, 0xff}
+	knightArmor   = color.RGBA{0x4d, 0xd0, 0xff, 0xff}
+	shieldRing    = color.RGBA{0x6a, 0xd0, 0xff, 0xff}
+	precisionMark = color.RGBA{0xff, 0x3a, 0x3a, 0xff}
 )
 
 type Player struct {
@@ -17,6 +27,8 @@ type Player struct {
 	weapon      weaponType
 	weaponLevel int
 	shieldTimer int
+	wingPhase   float64
+	tilt        float64
 }
 
 func newPlayer() *Player {
@@ -61,6 +73,9 @@ func (p *Player) update() {
 	p.x += dx * speed
 	p.y += dy * speed
 	p.clampToScreen()
+
+	p.wingPhase += playerWingSpeed
+	p.tilt += (dx*playerTiltMax - p.tilt) * playerTiltRate
 
 	if p.cooldown > 0 {
 		p.cooldown--
@@ -140,6 +155,9 @@ func (p *Player) hitbox() (x, y, w, h float64) {
 }
 
 func (p *Player) canBeHit() bool {
+	if dev.invincible {
+		return false
+	}
 	return p.invincible == 0
 }
 
@@ -174,11 +192,7 @@ func (p *Player) draw(screen *ebiten.Image) {
 	// Durante a invencibilidade o corpo pisca alternando ciclos.
 	blinkHidden := p.invincible > 0 && (p.invincible/invincibilityBlink)%2 == 0
 	if !blinkHidden {
-		knight := color.RGBA{0x4d, 0xd0, 0xff, 0xff}
-		vector.DrawFilledRect(screen, float32(p.x), float32(p.y), playerSize, playerSize, knight, false)
-
-		beak := color.RGBA{0xff, 0xd7, 0x4d, 0xff}
-		vector.DrawFilledRect(screen, float32(p.x+playerSize/2-2), float32(p.y-4), 4, 4, beak, false)
+		p.drawGriffin(screen)
 	}
 
 	if p.muzzleFlash > 0 {
@@ -189,12 +203,32 @@ func (p *Player) draw(screen *ebiten.Image) {
 
 	if p.precision {
 		hx, hy, hw, hh := p.hitbox()
-		mark := color.RGBA{0xff, 0x3a, 0x3a, 0xff}
-		vector.DrawFilledRect(screen, float32(hx), float32(hy), float32(hw), float32(hh), mark, false)
+		vector.DrawFilledRect(screen, float32(hx), float32(hy), float32(hw), float32(hh), precisionMark, false)
 	}
 
 	if p.shieldTimer > 0 {
-		ring := color.RGBA{0x6a, 0xd0, 0xff, 0xff}
-		vector.StrokeRect(screen, float32(p.x-2), float32(p.y-2), playerSize+4, playerSize+4, 1, ring, false)
+		vector.StrokeRect(screen, float32(p.x-2), float32(p.y-2), playerSize+4, playerSize+4, 1, shieldRing, false)
 	}
+}
+
+// drawGriffin desenha a silhueta do grifo com o cavaleiro montado, asas em
+// batida e leve inclinação ao mover para os lados.
+func (p *Player) drawGriffin(screen *ebiten.Image) {
+	cx := float32(p.centerX())
+	top := float32(p.y)
+	flap := float32(math.Sin(p.wingPhase) * 3)
+	tilt := float32(p.tilt)
+
+	const wingW, wingH = 7, 4
+	vector.DrawFilledRect(screen, cx-2-wingW, top+4-flap-tilt, wingW, wingH, griffinWing, false)
+	vector.DrawFilledRect(screen, cx+2, top+4-flap+tilt, wingW, wingH, griffinWing, false)
+
+	vector.DrawFilledRect(screen, cx-3, top+2, 6, playerSize-5, griffinBody, false)
+	vector.DrawFilledRect(screen, cx-1, top+playerSize-3, 2, 4, griffinWing, false)
+	vector.DrawFilledRect(screen, cx-2, top, 4, 3, griffinBody, false)
+	vector.DrawFilledRect(screen, cx-1, top-3, 2, 3, griffinBeak, false)
+
+	rider := cx - 2 + tilt*0.5
+	vector.DrawFilledRect(screen, rider, top+5, 4, 5, knightArmor, false)
+	vector.DrawFilledRect(screen, rider+1.5, top+1, 1, 4, knightArmor, false)
 }

@@ -76,19 +76,50 @@ const (
 
 // Configurações da fase e do sistema de ondas.
 const (
-	phaseDurationTicks = 13400 // referência para a barra de progresso
-	announceDuration   = 150   // frames que um aviso permanece na tela
+	phaseDurationTicks = 9900 // referência para a barra de progresso (~2,7 min de ondas)
+	announceDuration   = 150  // frames que um aviso permanece na tela
 
 	lineFormationCount = 4
 	vFormationCount    = 5
 	formationGapX      = 20
 	formationGapY      = 16
 
-	// Ajustes de desenvolvimento/teste.
-	devMode          = true
-	devStartSection  = 0 // inicia a fase neste trecho (0 a 3)
-	devTimeScale     = 1 // passos de linha do tempo por frame
-	devFastTimeScale = 6 // valor aplicado ao acelerar com Tab
+	devBossDamage = 20 // dano aplicado ao chefe pela tecla de desenvolvimento
+)
+
+// Chefe da fase 1 — Vharak, o Dragão Corrompido.
+const (
+	bossMaxHealth = 200
+	bossW         = 60
+	bossH         = 34
+	bossY         = 26
+	bossMargin    = 10
+
+	bossEntrySpeed      = 0.6
+	bossEntryHold       = 90 // frames exibindo o nome antes do combate
+	bossWarningDuration = 45
+	bossDeathDuration   = 120
+	bossScore           = 5000
+	bossContactDamage   = 1
+
+	bossSpeedP1    = 0.6
+	bossSpeedP2    = 1.2
+	bossSpeedP3    = 1.8
+	bossSweepSpeed = 2.0
+
+	// Varredura: brecha larga e lenta garante que sempre haja rota de fuga.
+	bossSweepStep    = 16
+	bossSweepGapHalf = 30
+	bossSweepGapMove = 0.9
+
+	crystalBonus = 3 // multiplicador de dano ao acertar um cristal
+)
+
+// Fluxo de telas e bônus finais.
+const (
+	fadeDuration    = 30
+	lifeBonus       = 500
+	bombBonusPoints = 300
 )
 
 // Configurações de armas e power-ups.

@@ -44,12 +44,14 @@ type Enemy struct {
 	color       color.RGBA
 	accent      color.RGBA
 	behavior    enemyBehavior
+	animTick    int
 }
 
 func (e *Enemy) update(ctx *enemyContext) {
 	if e.hitFlash > 0 {
 		e.hitFlash--
 	}
+	e.animTick++
 	e.behavior.update(e, ctx)
 }
 
@@ -79,22 +81,35 @@ func (e *Enemy) draw(screen *ebiten.Image) {
 	}
 	x, y := float32(e.x), float32(e.y)
 	w, h := float32(e.w), float32(e.h)
-	vector.DrawFilledRect(screen, x, y, w, h, body, false)
+	// Batida de asas: as asas sobem e descem em ciclo próprio de cada inimigo.
+	flap := float32(math.Sin(float64(e.animTick)*enemyWingSpeed) * 2)
 
 	switch e.kind {
 	case kindCrow:
-		vector.DrawFilledRect(screen, x-2, y+2, 2, 3, e.accent, false)
-		vector.DrawFilledRect(screen, x+w, y+2, 2, 3, e.accent, false)
+		// Corvo: corpo pequeno e escuro com asas pontudas curtas.
+		vector.DrawFilledRect(screen, x, y, w, h, body, false)
+		vector.DrawFilledRect(screen, x-3, y+2-flap, 3, 2, e.accent, false)
+		vector.DrawFilledRect(screen, x+w, y+2-flap, 3, 2, e.accent, false)
 	case kindHarpy:
-		vector.DrawFilledRect(screen, x-3, y, 3, h/2, e.accent, false)
-		vector.DrawFilledRect(screen, x+w, y, 3, h/2, e.accent, false)
+		// Harpia: asas grandes e claras, corpo mais estreito.
+		vector.DrawFilledRect(screen, x-4, y-flap, 4, h*0.6, e.accent, false)
+		vector.DrawFilledRect(screen, x+w, y-flap, 4, h*0.6, e.accent, false)
+		vector.DrawFilledRect(screen, x+2, y, w-4, h, body, false)
+		vector.DrawFilledRect(screen, x+w/2-1, y-3, 2, 3, e.accent, false)
 	case kindGargoyle:
-		vector.DrawFilledRect(screen, x, y-3, 3, 3, e.accent, false)
-		vector.DrawFilledRect(screen, x+w-3, y-3, 3, 3, e.accent, false)
+		// Gárgula: corpo robusto de pedra com chifres e asas curtas rígidas.
+		vector.DrawFilledRect(screen, x, y, w, h, body, false)
+		vector.DrawFilledRect(screen, x-3, y+4, 3, h-8, e.accent, false)
+		vector.DrawFilledRect(screen, x+w, y+4, 3, h-8, e.accent, false)
+		vector.DrawFilledRect(screen, x+1, y-3, 3, 3, e.accent, false)
+		vector.DrawFilledRect(screen, x+w-4, y-3, 3, 3, e.accent, false)
 	case kindWyvern:
-		vector.DrawFilledRect(screen, x-5, y+2, 5, h-4, e.accent, false)
-		vector.DrawFilledRect(screen, x+w, y+2, 5, h-4, e.accent, false)
-		vector.DrawFilledRect(screen, x+w/2-2, y+h, 4, 4, e.accent, false)
+		// Wyvern: grande, asas membranosas amplas, focinho e cauda visíveis.
+		vector.DrawFilledRect(screen, x-6, y+2-flap, 6, h-6, e.accent, false)
+		vector.DrawFilledRect(screen, x+w, y+2-flap, 6, h-6, e.accent, false)
+		vector.DrawFilledRect(screen, x, y, w, h, body, false)
+		vector.DrawFilledRect(screen, x+w/2-2, y-4, 4, 4, body, false)
+		vector.DrawFilledRect(screen, x+w/2-2, y+h, 4, 5, e.accent, false)
 	}
 }
 

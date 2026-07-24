@@ -19,6 +19,7 @@ type Bullet struct {
 	damage     int
 	pierce     int // inimigos adicionais que ainda pode atravessar
 	dead       bool
+	trail      bool // deixa rastro de partículas (projéteis especiais)
 	hitEnemies []*Enemy
 	color      color.RGBA
 }

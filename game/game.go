@@ -2,7 +2,6 @@ package game
 
 import (
 	"image/color"
-	"math/rand"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -19,9 +18,12 @@ const (
 type state int
 
 const (
-	statePlaying state = iota
+	stateMenu state = iota
+	stateControls
+	statePlaying
 	statePaused
-	stateBossIncoming
+	stateBoss
+	stateVictory
 	stateGameOver
 )
 
@@ -34,6 +36,17 @@ type Game struct {
 	enemyBullets []*EnemyBullet
 	powerups     []*Powerup
 	stars        []*star
+
+	clouds     []*bgItem
+	hills      []*bgItem
+	structures []*bgItem
+	dust       []*star
+	particles  []*particle
+
+	shakeMag     float64
+	shakeSetting shakeLevel
+	damageFlash  int
+	scene        *ebiten.Image
 
 	level       *Level
 	timeScale   int
@@ -51,7 +64,26 @@ type Game struct {
 	sectionDamaged bool
 	lastSection    int
 	formations     map[int]*formationTracker
+
+	boss *Boss
+
+	menuIndex int
+	fade      int
+
+	enemiesDefeated  int
+	maxMult          int
+	elapsedTicks     int
+	victoryLifeBonus int
+	victoryBombBonus int
+	victoryTime      int
+
+	audio *AudioManager
 }
+
+const menuItemCount = 4
+
+var gameOverOptions = []string{"Tentar novamente", "Voltar ao menu"}
+var victoryOptions = []string{"Jogar novamente", "Voltar ao menu"}
 
 type formationTracker struct {
 	total   int
@@ -61,12 +93,16 @@ type formationTracker struct {
 
 func New() *Game {
 	g := &Game{}
+	g.audio = getAudio()
 	g.reset()
 	g.initStars()
+	g.enterMenu()
 	return g
 }
 
+// reset cria uma sessão completamente nova, sem qualquer estado anterior.
 func (g *Game) reset() {
+	resetRNG()
 	g.state = statePlaying
 	g.player = newPlayer()
 	g.bullets = g.bullets[:0]
@@ -74,7 +110,7 @@ func (g *Game) reset() {
 	g.enemyBullets = g.enemyBullets[:0]
 	g.powerups = g.powerups[:0]
 	g.level = newLevel()
-	g.timeScale = devTimeScale
+	g.timeScale = dev.timeScale
 
 	g.lives = startingLives
 	g.bombCharges = bombStartCharges
@@ -85,26 +121,154 @@ func (g *Game) reset() {
 	g.sectionDamaged = false
 	g.lastSection = g.level.section
 	g.formations = map[int]*formationTracker{}
+	g.boss = nil
+
+	g.enemiesDefeated = 0
+	g.maxMult = 1
+	g.elapsedTicks = 0
+	g.victoryLifeBonus = 0
+	g.victoryBombBonus = 0
+	g.victoryTime = 0
+
+	g.particles = g.particles[:0]
+	g.shakeMag = 0
+	g.damageFlash = 0
+
+	if dev.startBoss {
+		g.startBoss()
+	}
+}
+
+func (g *Game) enterMenu() {
+	g.state = stateMenu
+	g.menuIndex = 0
+	g.fade = fadeDuration
+}
+
+func (g *Game) startNewGame() {
+	g.reset()
+	g.fade = fadeDuration
+}
+
+func (g *Game) startBoss() {
+	g.enemies = g.enemies[:0]
+	g.enemyBullets = g.enemyBullets[:0]
+	g.boss = newBoss()
+	g.state = stateBoss
 }
 
 func (g *Game) Update() error {
-	g.handlePauseToggle()
-
-	if g.state == statePaused {
-		return nil
+	if g.fade > 0 {
+		g.fade--
 	}
-
 	g.updateStars()
 
-	if g.state == stateGameOver {
-		if inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
-			g.reset()
-		}
+	if inpututil.IsKeyJustPressed(ebiten.KeyM) {
+		g.audio.toggleMute()
+	}
+	g.updateMusicForState()
+	g.audio.update()
+	g.handleDevToggles()
+
+	switch g.state {
+	case stateMenu:
+		return g.updateMenu()
+	case stateControls:
+		g.updateControls()
+		return nil
+	case statePaused:
+		g.handlePauseToggle()
+		return nil
+	case stateGameOver:
+		g.updateEndScreen(gameOverOptions)
+		return nil
+	case stateVictory:
+		g.updateEndScreen(victoryOptions)
 		return nil
 	}
 
+	g.updatePlay()
+	return nil
+}
+
+// updateMusicForState escolhe a trilha conforme a tela atual. A pausa mantém a
+// trilha do estado que estava em andamento.
+func (g *Game) updateMusicForState() {
+	st := g.state
+	if st == statePaused {
+		st = g.resumeState
+	}
+	switch st {
+	case statePlaying:
+		g.audio.playMusic(musicPhase)
+	case stateBoss:
+		g.audio.playMusic(musicBoss)
+	case stateGameOver, stateVictory:
+		g.audio.playMusic(musicNone)
+	default:
+		g.audio.playMusic(musicMenu)
+	}
+}
+
+// updateMenu navega o menu inicial. Sair encerra o jogo sem erro.
+func (g *Game) updateMenu() error {
+	g.moveMenuSelection(menuItemCount)
+	if !inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+		return nil
+	}
+	switch g.menuIndex {
+	case 0:
+		g.startNewGame()
+	case 1:
+		g.state = stateControls
+		g.fade = fadeDuration
+	case 2:
+		g.cycleShake()
+	case 3:
+		return ebiten.Termination
+	}
+	return nil
+}
+
+func (g *Game) updateControls() {
+	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+		g.enterMenu()
+	}
+}
+
+func (g *Game) updateEndScreen(options []string) {
+	g.moveMenuSelection(len(options))
+	if !inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+		return
+	}
+	if g.menuIndex == 0 {
+		g.startNewGame()
+		return
+	}
+	g.enterMenu()
+}
+
+func (g *Game) moveMenuSelection(count int) {
+	if inpututil.IsKeyJustPressed(ebiten.KeyArrowUp) || inpututil.IsKeyJustPressed(ebiten.KeyW) {
+		g.menuIndex = (g.menuIndex - 1 + count) % count
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyArrowDown) || inpututil.IsKeyJustPressed(ebiten.KeyS) {
+		g.menuIndex = (g.menuIndex + 1) % count
+	}
+}
+
+func (g *Game) updatePlay() {
+	g.handlePauseToggle()
+	if g.state == statePaused {
+		return
+	}
+
+	g.elapsedTicks++
 	g.player.update()
-	g.bullets = append(g.bullets, g.player.tryShoot()...)
+	if shots := g.player.tryShoot(); len(shots) > 0 {
+		g.bullets = append(g.bullets, shots...)
+		g.audio.playSFX(sfxShoot)
+	}
 	g.handleDebugSpawns()
 	g.handleBomb()
 
@@ -124,6 +288,9 @@ func (g *Game) Update() error {
 			g.spawnFromLevel()
 		}
 	}
+	if g.state == stateBoss {
+		g.updateBoss()
+	}
 
 	g.updateBullets()
 	g.updateEnemies()
@@ -132,6 +299,13 @@ func (g *Game) Update() error {
 	g.handleCollisions()
 	g.collectPowerups()
 	g.removeDead()
+
+	g.updateParallax()
+	g.updateParticles()
+	g.updateShake()
+	if g.damageFlash > 0 {
+		g.damageFlash--
+	}
 
 	if g.player.health <= 0 {
 		g.loseLife()
@@ -145,11 +319,64 @@ func (g *Game) Update() error {
 			if !g.sectionDamaged {
 				g.score += waveNoDamageBonus
 			}
-			g.state = stateBossIncoming
+			g.startBoss()
 		}
 	}
+	if g.state == stateBoss {
+		g.checkBossDefeat()
+	}
+}
 
-	return nil
+func (g *Game) updateBoss() {
+	ctx := &bossContext{
+		playerX: g.player.centerX(),
+		playerY: g.player.centerY(),
+		bullets: &g.enemyBullets,
+		enemies: &g.enemies,
+	}
+	g.boss.update(ctx)
+
+	if g.boss.justEntered {
+		g.enemies = g.enemies[:0]
+		g.enemyBullets = g.enemyBullets[:0]
+		g.boss.justEntered = false
+	}
+	if g.boss.phaseChanged {
+		g.enemyBullets = g.enemyBullets[:0]
+		g.addShake(shakeBossMagnitude)
+		g.boss.phaseChanged = false
+	}
+	if g.boss.phase == bossDying {
+		g.bossDeathEffects()
+	}
+}
+
+// bossDeathEffects espalha explosões pelo corpo do chefe durante a morte.
+func (g *Game) bossDeathEffects() {
+	if g.boss.tick%6 != 0 {
+		return
+	}
+	x := g.boss.x + fxRand.Float64()*g.boss.w
+	y := g.boss.y + fxRand.Float64()*g.boss.h
+	g.spawnBurst(x, y, bossDeathParticles/2, 2.6, 26, 3, true, color.RGBA{0xff, 0xc0, 0x50, 0xff})
+	g.addShake(shakeBossMagnitude)
+}
+
+func (g *Game) checkBossDefeat() {
+	if g.boss.phase != bossDead {
+		return
+	}
+	g.victoryTime = g.elapsedTicks / 60
+	g.victoryLifeBonus = g.lives * lifeBonus
+	g.victoryBombBonus = g.bombCharges * bombBonusPoints
+	g.score += bossScore + g.victoryLifeBonus + g.victoryBombBonus
+	if g.score > g.highScore {
+		g.highScore = g.score
+	}
+	g.state = stateVictory
+	g.menuIndex = 0
+	g.fade = fadeDuration
+	g.audio.playSFX(sfxVictory)
 }
 
 func (g *Game) spawnFromLevel() {
@@ -174,6 +401,9 @@ func (g *Game) loseLife() {
 	g.lives--
 	if g.lives <= 0 {
 		g.state = stateGameOver
+		g.menuIndex = 0
+		g.fade = fadeDuration
+		g.audio.playSFX(sfxGameOver)
 		return
 	}
 	g.respawn()
@@ -198,7 +428,10 @@ func (g *Game) checkSectionBonus() {
 }
 
 func (g *Game) handleBomb() {
-	if g.state != statePlaying || g.bombCharges <= 0 {
+	if g.state != statePlaying && g.state != stateBoss {
+		return
+	}
+	if g.bombCharges <= 0 {
 		return
 	}
 	if !inpututil.IsKeyJustPressed(ebiten.KeyX) && !inpututil.IsKeyJustPressed(ebiten.KeyControl) {
@@ -217,10 +450,16 @@ func (g *Game) useBomb() {
 		e.takeDamage(bombDamage)
 		if e.dead {
 			g.score += e.score
+			g.spawnExplosion(e.centerX(), e.centerY(), e.color)
 		}
+	}
+	if g.boss != nil {
+		g.boss.takeDamage(bombDamage / 20) // dano relevante, mas não instantâneo
 	}
 	g.player.invincible = bombInvincibility
 	g.bombEffectTimer = bombEffectDuration
+	g.addShake(shakeBombMagnitude)
+	g.audio.playSFX(sfxBomb)
 }
 
 func (g *Game) handlePauseToggle() {
@@ -231,26 +470,29 @@ func (g *Game) handlePauseToggle() {
 		g.state = g.resumeState
 		return
 	}
-	if g.state == statePlaying || g.state == stateBossIncoming {
+	if g.state == statePlaying || g.state == stateBoss {
 		g.resumeState = g.state
 		g.state = statePaused
 	}
 }
 
 func (g *Game) handleTimeScaleToggle() {
-	if !inpututil.IsKeyJustPressed(ebiten.KeyTab) {
+	if !dev.enabled || !inpututil.IsKeyJustPressed(ebiten.KeyTab) {
 		return
 	}
-	if g.timeScale == devFastTimeScale {
-		g.timeScale = devTimeScale
+	if g.timeScale == dev.fastTimeScale {
+		g.timeScale = dev.timeScale
 		return
 	}
-	g.timeScale = devFastTimeScale
+	g.timeScale = dev.fastTimeScale
 }
 
 func (g *Game) updateBullets() {
 	for _, b := range g.bullets {
 		b.update()
+		if b.trail {
+			g.spawnTrail(b.x, b.y, b.color)
+		}
 		if b.offScreen() {
 			b.dead = true
 		}
@@ -258,27 +500,31 @@ func (g *Game) updateBullets() {
 }
 
 func (g *Game) spawnCrowFormation() {
-	count := 3 + rand.Intn(2)
+	count := 3 + rng.Intn(2)
 	const gap = crowSize + 6
-	startX := rand.Float64() * (ScreenWidth - float64(count)*gap)
+	startX := rng.Float64() * (ScreenWidth - float64(count)*gap)
 	for i := 0; i < count; i++ {
 		g.enemies = append(g.enemies, newCrow(startX+float64(i)*gap))
 	}
 }
 
 func (g *Game) spawnGargoyle() {
-	fromLeft := rand.Intn(2) == 0
-	targetX := 40 + rand.Float64()*(ScreenWidth-80-gargoyleSize)
-	y := 30 + rand.Float64()*60
+	fromLeft := rng.Intn(2) == 0
+	targetX := 40 + rng.Float64()*(ScreenWidth-80-gargoyleSize)
+	y := 30 + rng.Float64()*60
 	g.enemies = append(g.enemies, newGargoyle(fromLeft, targetX, y))
 }
 
 func randX(size float64) float64 {
-	return rand.Float64() * (ScreenWidth - size)
+	return rng.Float64() * (ScreenWidth - size)
 }
 
-// handleDebugSpawns permite forçar cada tipo de inimigo para teste manual.
+// handleDebugSpawns concentra as teclas do modo de desenvolvimento e só age
+// quando ele está ativo, mantendo o build padrão livre dessas ferramentas.
 func (g *Game) handleDebugSpawns() {
+	if !dev.enabled {
+		return
+	}
 	if inpututil.IsKeyJustPressed(ebiten.KeyDigit1) {
 		g.spawnCrowFormation()
 	}
@@ -291,15 +537,41 @@ func (g *Game) handleDebugSpawns() {
 	if inpututil.IsKeyJustPressed(ebiten.KeyDigit4) {
 		g.enemies = append(g.enemies, newWyvern(randX(wyvernSize)))
 	}
-
-	if !devMode {
-		return
-	}
 	g.debugSpawnPowerup(ebiten.KeyZ, powerLight)
 	g.debugSpawnPowerup(ebiten.KeyF, powerFire)
 	g.debugSpawnPowerup(ebiten.KeyC, powerIce)
 	g.debugSpawnPowerup(ebiten.KeyV, powerHeal)
 	g.debugSpawnPowerup(ebiten.KeyB, powerShield)
+
+	if inpututil.IsKeyJustPressed(ebiten.KeyK) && g.boss != nil {
+		g.boss.takeDamage(devBossDamage)
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyL) {
+		g.clearEntities()
+	}
+}
+
+// clearEntities remove inimigos e projéteis sem contá-los como abatidos.
+func (g *Game) clearEntities() {
+	g.enemies = g.enemies[:0]
+	g.enemyBullets = g.enemyBullets[:0]
+	g.bullets = g.bullets[:0]
+}
+
+// handleDevToggles alterna as sobreposições de diagnóstico do modo dev.
+func (g *Game) handleDevToggles() {
+	if !dev.enabled {
+		return
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyF1) {
+		dev.showHUD = !dev.showHUD
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyF2) {
+		dev.showHitboxes = !dev.showHitboxes
+	}
+	if inpututil.IsKeyJustPressed(ebiten.KeyF3) {
+		dev.invincible = !dev.invincible
+	}
 }
 
 func (g *Game) debugSpawnPowerup(key ebiten.Key, kind powerupType) {
@@ -334,12 +606,49 @@ func (g *Game) updateEnemyBullets() {
 
 func (g *Game) handleCollisions() {
 	g.bulletEnemyCollisions()
+	if g.boss != nil {
+		g.bulletBossCollisions()
+	}
 
 	if g.player.canBeHit() {
 		g.playerEnemyCollisions()
 	}
 	if g.player.canBeHit() {
 		g.playerBulletCollisions()
+	}
+	if g.boss != nil && g.player.canBeHit() {
+		g.playerBossCollision()
+	}
+}
+
+func (g *Game) bulletBossCollisions() {
+	boss := g.boss
+	for _, b := range g.bullets {
+		if b.dead {
+			continue
+		}
+		if !collides(b.x, b.y, b.w, b.h, boss.x, boss.y, boss.w, boss.h) {
+			continue
+		}
+		damage := b.damage
+		if boss.hitCrystal(b.x, b.y, b.w, b.h) {
+			damage *= crystalBonus
+		}
+		boss.takeDamage(damage)
+		b.dead = true
+	}
+}
+
+func (g *Game) playerBossCollision() {
+	boss := g.boss
+	if boss.phase == bossDying || boss.phase == bossDead {
+		return
+	}
+	hx, hy, hw, hh := g.player.hitbox()
+	if collides(hx, hy, hw, hh, boss.x, boss.y, boss.w, boss.h) {
+		if g.player.hit(bossContactDamage) {
+			g.onPlayerDamaged()
+		}
 	}
 }
 
@@ -360,6 +669,7 @@ func (g *Game) bulletEnemyCollisions() {
 			if e.dead {
 				g.registerKill(e.score)
 				g.spawnDrop(e)
+				g.spawnExplosion(e.centerX(), e.centerY(), e.color)
 			}
 			if b.pierce > 0 {
 				b.pierce--
@@ -379,6 +689,7 @@ func (g *Game) playerEnemyCollisions() {
 		}
 		if collides(hx, hy, hw, hh, e.x, e.y, e.w, e.h) {
 			e.dead = true
+			g.spawnExplosion(e.centerX(), e.centerY(), e.color)
 			if g.player.hit(e.damage) {
 				g.onPlayerDamaged()
 			}
@@ -407,6 +718,9 @@ func (g *Game) registerKill(base int) {
 	g.combo++
 	g.comboTimer = comboWindow
 	g.score += base * g.multiplier()
+	if g.multiplier() > g.maxMult {
+		g.maxMult = g.multiplier()
+	}
 }
 
 func (g *Game) multiplier() int {
@@ -421,6 +735,12 @@ func (g *Game) onPlayerDamaged() {
 	g.combo = 0
 	g.comboTimer = 0
 	g.sectionDamaged = true
+	g.triggerDamageFlash()
+	g.addShake(shakeHitMagnitude)
+	g.audio.playSFX(sfxPlayerHit)
+	if g.player != nil {
+		g.spawnBurst(g.player.centerX(), g.player.centerY(), 6, 2.0, 18, 2, false, color.RGBA{0xff, 0x60, 0x60, 0xff})
+	}
 }
 
 func (g *Game) spawnDrop(e *Enemy) {
@@ -428,13 +748,13 @@ func (g *Game) spawnDrop(e *Enemy) {
 		g.powerups = append(g.powerups, newPowerup(e.drop, e.centerX(), e.centerY()))
 		return
 	}
-	if rand.Float64() < dropChance {
+	if rng.Float64() < dropChance {
 		g.powerups = append(g.powerups, newPowerup(randomRune(), e.centerX(), e.centerY()))
 	}
 }
 
 func randomRune() powerupType {
-	switch rand.Intn(5) {
+	switch rng.Intn(5) {
 	case 0:
 		return powerLight
 	case 1:
@@ -465,13 +785,21 @@ func (g *Game) collectPowerups() {
 		if collides(g.player.x, g.player.y, playerSize, playerSize, p.x, p.y, powerupSize, powerupSize) {
 			g.player.applyPowerup(p.kind)
 			p.dead = true
+			g.spawnCollectRing(p.x+powerupSize/2, p.y+powerupSize/2, p.color())
+			g.audio.playSFX(sfxPickup)
 		}
 	}
 }
 
 func (g *Game) removeDead() {
 	for _, e := range g.enemies {
-		if e.dead && e.formationID > 0 {
+		if !e.dead {
+			continue
+		}
+		if !e.escaped {
+			g.enemiesDefeated++
+		}
+		if e.formationID > 0 {
 			g.accountFormation(e)
 		}
 	}
@@ -519,28 +847,108 @@ func filterAlive[T any](items []*T, keep func(*T) bool) []*T {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	screen.Fill(g.level.background())
-	g.drawStars(screen)
+	switch g.state {
+	case stateMenu:
+		g.drawMenu(screen)
+	case stateControls:
+		g.drawControls(screen)
+	case stateGameOver:
+		g.drawGameOver(screen)
+	case stateVictory:
+		g.drawVictory(screen)
+	default:
+		g.drawWorld(screen)
+	}
+	g.drawFade(screen)
+}
 
-	for _, b := range g.bullets {
-		b.draw(screen)
+// drawWorld renderiza a cena em uma imagem própria, aplica a vibração ao
+// compô-la na tela e desenha o HUD por cima (sem tremer), preservando a leitura.
+func (g *Game) drawWorld(screen *ebiten.Image) {
+	if g.scene == nil {
+		g.scene = ebiten.NewImage(ScreenWidth, ScreenHeight)
 	}
-	for _, b := range g.enemyBullets {
-		b.draw(screen)
+	g.scene.Clear()
+	g.drawScene(g.scene)
+
+	screen.Fill(g.level.background())
+	ox, oy := g.shakeOffset()
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(ox, oy)
+	screen.DrawImage(g.scene, op)
+
+	if g.damageFlash > 0 {
+		alpha := uint8(damageFlashAlpha * g.damageFlash / damageFlashDuration)
+		vector.DrawFilledRect(screen, 0, 0, ScreenWidth, ScreenHeight, color.RGBA{0xff, 0x20, 0x20, alpha}, false)
 	}
+
+	g.drawOverlayHUD(screen)
+}
+
+// drawScene desenha o cenário e as entidades. Projéteis são desenhados por
+// último para permanecerem visíveis acima das partículas e efeitos.
+func (g *Game) drawScene(dst *ebiten.Image) {
+	theme := g.level.theme()
+	dst.Fill(theme.sky)
+	g.drawParallax(dst, theme)
+	g.drawParticles(dst)
+
 	for _, p := range g.powerups {
-		p.draw(screen)
+		p.draw(dst)
 	}
 	for _, e := range g.enemies {
-		e.draw(screen)
+		e.draw(dst)
 	}
-	g.player.draw(screen)
+	if g.boss != nil {
+		g.boss.draw(dst)
+	}
+	g.player.draw(dst)
+
+	for _, b := range g.enemyBullets {
+		b.draw(dst)
+	}
+	for _, b := range g.bullets {
+		b.draw(dst)
+	}
 
 	if g.bombEffectTimer > 0 {
-		g.drawBombEffect(screen)
+		g.drawBombEffect(dst)
 	}
 
+	if dev.showHitboxes {
+		g.drawHitboxes(dst)
+	}
+}
+
+// drawHitboxes desenha os contornos de colisão para depuração visual.
+func (g *Game) drawHitboxes(dst *ebiten.Image) {
+	green := color.RGBA{0x40, 0xff, 0x40, 0xff}
+	yellow := color.RGBA{0xff, 0xff, 0x40, 0xff}
+
+	hx, hy, hw, hh := g.player.hitbox()
+	vector.StrokeRect(dst, float32(hx), float32(hy), float32(hw), float32(hh), 1, green, false)
+	for _, e := range g.enemies {
+		vector.StrokeRect(dst, float32(e.x), float32(e.y), float32(e.w), float32(e.h), 1, green, false)
+	}
+	for _, b := range g.bullets {
+		vector.StrokeRect(dst, float32(b.x), float32(b.y), float32(b.w), float32(b.h), 1, green, false)
+	}
+	for _, b := range g.enemyBullets {
+		vector.StrokeRect(dst, float32(b.x), float32(b.y), enemyBulletSize, enemyBulletSize, 1, yellow, false)
+	}
+	if g.boss != nil {
+		vector.StrokeRect(dst, float32(g.boss.x), float32(g.boss.y), float32(g.boss.w), float32(g.boss.h), 1, green, false)
+	}
+}
+
+func (g *Game) drawOverlayHUD(screen *ebiten.Image) {
 	g.drawHUD(screen)
+	if g.boss != nil {
+		g.drawBossHUD(screen)
+	}
+	if dev.enabled && dev.showHUD {
+		g.drawDevHUD(screen)
+	}
 
 	if g.level.announceTimer > 0 && g.level.announce != "" {
 		ebitenutil.DebugPrintAt(screen, g.level.announce, ScreenWidth/2-len(g.level.announce)*3, 70)
@@ -549,14 +957,144 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	if g.state == statePaused {
 		ebitenutil.DebugPrintAt(screen, "PAUSADO", ScreenWidth/2-24, ScreenHeight/2-4)
 	}
+}
 
-	if g.state == stateBossIncoming {
-		ebitenutil.DebugPrintAt(screen, "O CHEFE SE APROXIMA", ScreenWidth/2-57, ScreenHeight/2-4)
+// drawDevHUD mostra FPS, contagens, tempo da fase e a semente em uso.
+func (g *Game) drawDevHUD(screen *ebiten.Image) {
+	lines := []string{
+		"FPS " + itoa(int(ebiten.ActualFPS()+0.5)),
+		"INIM " + itoa(len(g.enemies)),
+		"PROJ " + itoa(len(g.bullets)+len(g.enemyBullets)),
+		"PART " + itoa(len(g.particles)),
+		"TEMPO " + itoa(g.elapsedTicks/60) + "s",
+		"TS x" + itoa(g.timeScale),
+		"SEED " + itoa(int(CurrentSeed())),
+	}
+	if dev.invincible {
+		lines = append(lines, "INVENCIVEL")
+	}
+	for i, l := range lines {
+		ebitenutil.DebugPrintAt(screen, l, 4, 44+i*12)
+	}
+}
+
+func (g *Game) drawStarsBackground(screen *ebiten.Image) {
+	screen.Fill(color.RGBA{0x0a, 0x0a, 0x1e, 0xff})
+	g.drawStars(screen)
+}
+
+func (g *Game) drawMenu(screen *ebiten.Image) {
+	g.drawStarsBackground(screen)
+	drawCentered(screen, "ASAS DE VALDORIA", 60)
+	drawCentered(screen, "Um shoot 'em up medieval fantastico", 78)
+	options := []string{
+		"Iniciar jogo",
+		"Controles",
+		"Vibracao: " + shakeLevelName(g.shakeSetting),
+		"Sair",
+	}
+	g.drawOptions(screen, options, 150)
+	drawCentered(screen, "Setas/WASD move  Enter confirma", ScreenHeight-16)
+	ebitenutil.DebugPrintAt(screen, "v"+Version, 4, ScreenHeight-14)
+}
+
+func (g *Game) drawControls(screen *ebiten.Image) {
+	g.drawStarsBackground(screen)
+	drawCentered(screen, "CONTROLES", 30)
+	lines := []string{
+		"Setas ou WASD: mover",
+		"Shift: precisao",
+		"Espaco: disparar",
+		"X ou Ctrl: invocacao ancestral",
+		"Escape: pausar",
+		"Enter: confirmar",
+	}
+	for i, l := range lines {
+		ebitenutil.DebugPrintAt(screen, l, 24, 60+i*18)
+	}
+	drawCentered(screen, "Enter/Escape para voltar", ScreenHeight-20)
+}
+
+// reachedLabel descreve até onde o jogador avançou ao perder.
+func (g *Game) reachedLabel() string {
+	if g.boss != nil {
+		return "Chefe: Vharak"
+	}
+	return g.level.sectionName()
+}
+
+func (g *Game) drawGameOver(screen *ebiten.Image) {
+	g.drawStarsBackground(screen)
+	drawCentered(screen, "GAME OVER", 40)
+	stats := []string{
+		"Pontuacao: " + itoa(g.score),
+		"Trecho: " + g.reachedLabel(),
+		"Inimigos derrotados: " + itoa(g.enemiesDefeated),
+		"Maior multiplicador: x" + itoa(g.maxMult),
+	}
+	for i, s := range stats {
+		ebitenutil.DebugPrintAt(screen, s, 30, 80+i*16)
+	}
+	g.drawOptions(screen, gameOverOptions, 170)
+}
+
+func (g *Game) drawVictory(screen *ebiten.Image) {
+	g.drawStarsBackground(screen)
+	drawCentered(screen, "FASE CONCLUIDA!", 34)
+	stats := []string{
+		"Pontuacao final: " + itoa(g.score),
+		"Bonus por vidas: " + itoa(g.victoryLifeBonus),
+		"Bonus por bombas: " + itoa(g.victoryBombBonus),
+		"Tempo: " + itoa(g.victoryTime) + "s",
+		"Inimigos derrotados: " + itoa(g.enemiesDefeated),
+	}
+	for i, s := range stats {
+		ebitenutil.DebugPrintAt(screen, s, 30, 70+i*16)
+	}
+	g.drawOptions(screen, victoryOptions, 180)
+}
+
+func (g *Game) drawOptions(screen *ebiten.Image, options []string, y int) {
+	for i, opt := range options {
+		text := "  " + opt
+		if i == g.menuIndex {
+			text = "> " + opt
+		}
+		ebitenutil.DebugPrintAt(screen, text, ScreenWidth/2-len(text)*3, y+i*16)
+	}
+}
+
+func (g *Game) drawFade(screen *ebiten.Image) {
+	if g.fade <= 0 {
+		return
+	}
+	alpha := uint8(255 * g.fade / fadeDuration)
+	vector.DrawFilledRect(screen, 0, 0, ScreenWidth, ScreenHeight, color.RGBA{0, 0, 0, alpha}, false)
+}
+
+func drawCentered(screen *ebiten.Image, text string, y int) {
+	ebitenutil.DebugPrintAt(screen, text, ScreenWidth/2-len(text)*3, y)
+}
+
+func (g *Game) drawBossHUD(screen *ebiten.Image) {
+	b := g.boss
+	if b.phase == bossDead {
+		return
+	}
+	if b.phase == bossEntering {
+		ebitenutil.DebugPrintAt(screen, "VHARAK, O DRAGAO CORROMPIDO", ScreenWidth/2-81, ScreenHeight/2)
+		return
 	}
 
-	if g.state == stateGameOver {
-		ebitenutil.DebugPrintAt(screen, "GAME OVER", ScreenWidth/2-28, ScreenHeight/2-8)
-		ebitenutil.DebugPrintAt(screen, "ENTER PARA REINICIAR", ScreenWidth/2-60, ScreenHeight/2+8)
+	const barY = 12
+	const margin = 10
+	width := float32(ScreenWidth - 2*margin)
+	vector.DrawFilledRect(screen, margin, barY, width, 5, color.RGBA{0x30, 0x10, 0x10, 0xff}, false)
+	vector.DrawFilledRect(screen, margin, barY, width*float32(b.healthRatio()), 5, color.RGBA{0xc0, 0x30, 0x30, 0xff}, false)
+	ebitenutil.DebugPrintAt(screen, "VHARAK", margin, 0)
+
+	if b.action == actionWarning {
+		ebitenutil.DebugPrintAt(screen, "!", int(b.centerX())-2, int(b.y+b.h)+4)
 	}
 }
 

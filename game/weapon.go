@@ -75,7 +75,9 @@ func fireFlame(level int, x, topY float64) []*Bullet {
 	for _, angle := range fanAngles(count, flameSpread) {
 		vx := math.Sin(angle) * flameBulletSpeed
 		vy := -math.Cos(angle) * flameBulletSpeed
-		out = append(out, newBullet(x-bulletWidth/2, topY, vx, vy, flameBulletDamage, 0, flameColor))
+		b := newBullet(x-bulletWidth/2, topY, vx, vy, flameBulletDamage, 0, flameColor)
+		b.trail = true
+		out = append(out, b)
 	}
 	return out
 }
@@ -86,7 +88,11 @@ func fireIce(level int, x, topY float64) []*Bullet {
 	if level >= 3 {
 		pierce = icePierceMax
 	}
-	return straightSpread(level, x, topY, iceBulletSpeed, iceBulletDamage, pierce, iceColor)
+	out := straightSpread(level, x, topY, iceBulletSpeed, iceBulletDamage, pierce, iceColor)
+	for _, b := range out {
+		b.trail = true
+	}
+	return out
 }
 
 func straightSpread(count int, x, topY, speed float64, damage, pierce int, c color.RGBA) []*Bullet {

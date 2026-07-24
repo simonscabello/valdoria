@@ -115,47 +115,43 @@ func newLevel() *Level {
 		ev.drop = kind
 	}
 
-	// Trecho 1 - Campos do reino: formações de corvos, baixa dificuldade.
-	add(120, kindCrow, 1, 0, formationLine, 40, false)
+	// Trecho 1 - Campos do reino: corvos espaçados, introdução acessível.
+	add(120, kindCrow, 1, 0, formationLine, 60, false)
 	add(600, kindCrow, 1, 0, formationV, 120, false)
 	drop(powerFire)
-	add(1200, kindCrow, 2, 90, formationLine, 80, false)
-	drop(powerShield)
-	add(2000, kindCrow, 1, 0, formationV, 160, false)
-	add(2600, kindCrow, 2, 80, formationLine, 30, false)
-	add(3200, kindCrow, 1, 0, formationV, 100, false)
+	add(1200, kindCrow, 2, 90, formationLine, 40, false)
+	add(1900, kindCrow, 1, 0, formationV, 150, false)
+	add(2400, kindCrow, 2, 90, formationLine, 90, false)
 
-	// Trecho 2 - Vila atacada: harpias em zigue-zague misturadas a corvos.
-	add(3800, kindHarpy, 3, 70, formationSingle, 40, false)
+	// Trecho 2 - Vila atacada: harpias com projéteis surgem entre corvos.
+	add(2760, kindHarpy, 3, 70, formationSingle, 40, false)
 	drop(powerIce)
-	add(4200, kindCrow, 2, 80, formationLine, 120, false)
+	add(3200, kindCrow, 2, 80, formationLine, 120, false)
+	add(3800, kindHarpy, 2, 90, formationSingle, 170, false)
+	add(4300, kindCrow, 1, 0, formationV, 90, false)
 	drop(powerHeal)
-	add(4800, kindHarpy, 2, 90, formationSingle, 180, false)
-	add(5400, kindCrow, 1, 0, formationV, 90, false)
-	add(5800, kindHarpy, 3, 80, formationSingle, 60, false)
-	add(6400, kindCrow, 2, 70, formationLine, 140, false)
+	add(4800, kindHarpy, 3, 80, formationSingle, 60, false)
 
 	// Trecho 3 - Muralhas: gárgulas pelas laterais protegidas por harpias.
-	add(7400, kindGargoyle, 1, 0, formationSingle, 60, true)
+	add(5460, kindGargoyle, 1, 0, formationSingle, 60, true)
 	drop(powerLight)
-	add(7500, kindHarpy, 2, 80, formationSingle, 40, false)
-	add(8200, kindGargoyle, 1, 0, formationSingle, 170, false)
-	add(8300, kindHarpy, 2, 80, formationSingle, 150, false)
-	add(9000, kindGargoyle, 1, 0, formationSingle, 100, true)
+	add(5560, kindHarpy, 2, 80, formationSingle, 40, false)
+	add(6100, kindGargoyle, 1, 0, formationSingle, 170, false)
+	add(6600, kindHarpy, 3, 70, formationSingle, 150, false)
+	add(7100, kindGargoyle, 1, 0, formationSingle, 100, true)
 	drop(powerHeal)
-	add(9100, kindHarpy, 3, 70, formationSingle, 90, false)
-	add(9800, kindGargoyle, 1, 0, formationSingle, 130, false)
+	add(7400, kindHarpy, 2, 80, formationSingle, 90, false)
 
 	// Trecho 4 - Aproximação do castelo: wyverns e formações combinadas.
-	add(11000, kindWyvern, 1, 0, formationSingle, 60, false)
+	add(8160, kindWyvern, 1, 0, formationSingle, 60, false)
 	drop(powerShield)
-	add(11400, kindHarpy, 3, 70, formationSingle, 120, false)
-	add(11800, kindWyvern, 1, 0, formationSingle, 160, false)
-	add(12200, kindCrow, 2, 80, formationLine, 40, false)
-	add(12800, kindWyvern, 2, 200, formationSingle, 100, false)
+	add(8500, kindHarpy, 3, 70, formationSingle, 120, false)
+	add(8900, kindWyvern, 1, 0, formationSingle, 160, false)
+	add(9200, kindCrow, 2, 80, formationLine, 40, false)
+	add(9500, kindWyvern, 1, 0, formationSingle, 100, false)
 
-	if devStartSection > 0 {
-		l.skipToSection(devStartSection)
+	if dev.startSection > 0 {
+		l.skipToSection(dev.startSection)
 	}
 	return l
 }
@@ -163,9 +159,9 @@ func newLevel() *Level {
 func phase1Sections() []levelSection {
 	return []levelSection{
 		{startTick: 0, name: "Campos do reino", warning: "", bg: color.RGBA{0x0a, 0x0a, 0x1e, 0xff}},
-		{startTick: 3600, name: "Vila atacada", warning: "A vila esta sob ataque!", bg: color.RGBA{0x1e, 0x12, 0x12, 0xff}},
-		{startTick: 7200, name: "Muralhas", warning: "Aproximando-se das muralhas", bg: color.RGBA{0x12, 0x14, 0x24, 0xff}},
-		{startTick: 10800, name: "Aproximacao do castelo", warning: "O castelo se aproxima...", bg: color.RGBA{0x1a, 0x10, 0x22, 0xff}},
+		{startTick: 2700, name: "Vila atacada", warning: "A vila esta sob ataque!", bg: color.RGBA{0x1e, 0x12, 0x12, 0xff}},
+		{startTick: 5400, name: "Muralhas", warning: "Aproximando-se das muralhas", bg: color.RGBA{0x12, 0x14, 0x24, 0xff}},
+		{startTick: 8100, name: "Aproximacao do castelo", warning: "O castelo se aproxima...", bg: color.RGBA{0x1a, 0x10, 0x22, 0xff}},
 	}
 }
 
@@ -246,8 +242,12 @@ func (l *Level) readyForBoss(enemiesRemaining int) bool {
 	return l.allEventsDone() && enemiesRemaining == 0
 }
 
+func (l *Level) theme() bgTheme {
+	return themeForSection(l.section)
+}
+
 func (l *Level) background() color.RGBA {
-	return l.sections[l.section].bg
+	return l.theme().sky
 }
 
 func (l *Level) sectionName() string {

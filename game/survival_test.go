@@ -4,6 +4,7 @@ import "testing"
 
 func TestLoseLifeRespawnsThenGameOver(t *testing.T) {
 	g := New()
+	g.startNewGame()
 	g.lives = 2
 
 	g.player.health = 0
