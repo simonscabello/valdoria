@@ -20,6 +20,7 @@ type Bullet struct {
 	pierce     int // inimigos adicionais que ainda pode atravessar
 	dead       bool
 	trail      bool // deixa rastro de partículas (projéteis especiais)
+	element    weaponType
 	hitEnemies []*Enemy
 	color      color.RGBA
 }
@@ -51,5 +52,9 @@ func (b *Bullet) alreadyHit(e *Enemy) bool {
 }
 
 func (b *Bullet) draw(screen *ebiten.Image) {
-	vector.DrawFilledRect(screen, float32(b.x), float32(b.y), float32(b.w), float32(b.h), b.color, false)
+	x, y := float32(b.x), float32(b.y)
+	w, h := float32(b.w), float32(b.h)
+	drawBulletGlow(screen, x, y, w, h, b.color)
+	vector.DrawFilledRect(screen, x, y, w, h, b.color, false)
+	vector.DrawFilledRect(screen, x, y, w, 2, brighten(b.color, 40), false)
 }

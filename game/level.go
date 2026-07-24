@@ -29,11 +29,13 @@ type waveEvent struct {
 }
 
 func (ev *waveEvent) spawn() []*Enemy {
+	// Jitter no âncora da onda: em formações o grupo inteiro se desloca junto.
+	x := jitterSpawnX(ev.spawnX)
 	switch ev.formation {
 	case formationLine:
 		out := make([]*Enemy, 0, lineFormationCount)
 		for i := 0; i < lineFormationCount; i++ {
-			out = append(out, spawnEnemy(ev.kind, ev.spawnX+float64(i)*formationGapX, 0, ev.fromLeft))
+			out = append(out, spawnEnemy(ev.kind, x+float64(i)*formationGapX, 0, ev.fromLeft))
 		}
 		return out
 	case formationV:
@@ -44,32 +46,58 @@ func (ev *waveEvent) spawn() []*Enemy {
 			if depth < 0 {
 				depth = -depth
 			}
-			x := ev.spawnX + float64(i-center)*formationGapX
-			out = append(out, spawnEnemy(ev.kind, x, -float64(depth)*formationGapY, ev.fromLeft))
+			px := x + float64(i-center)*formationGapX
+			out = append(out, spawnEnemy(ev.kind, px, -float64(depth)*formationGapY, ev.fromLeft))
 		}
 		return out
 	default:
-		return []*Enemy{spawnEnemy(ev.kind, ev.spawnX, 0, ev.fromLeft)}
+		return []*Enemy{spawnEnemy(ev.kind, x, 0, ev.fromLeft)}
 	}
 }
 
 func spawnEnemy(kind enemyKind, x, yOffset float64, fromLeft bool) *Enemy {
 	switch kind {
 	case kindHarpy:
-		e := newHarpy(clampSpawnX(x, harpySize))
+		e := newHarpy(fairSpawnX(x, harpySize))
 		e.y += yOffset
 		return e
 	case kindGargoyle:
+		// Gárgulas entram pela lateral de propósito — sem margem "justa".
 		return newGargoyle(fromLeft, x, 30)
 	case kindWyvern:
-		e := newWyvern(clampSpawnX(x, wyvernSize))
+		e := newWyvern(fairSpawnX(x, wyvernSize))
+		e.y += yOffset
+		return e
+	case kindBallista:
+		e := newBallista(fairSpawnX(x, ballistaSize))
+		e.y += yOffset
+		return e
+	case kindMage:
+		e := newMage(fairSpawnX(x, mageSize))
 		e.y += yOffset
 		return e
 	default:
-		e := newCrow(clampSpawnX(x, crowSize))
+		e := newCrow(fairSpawnX(x, crowSize))
 		e.y += yOffset
 		return e
 	}
+}
+
+// fairSpawnX mantém o spawn longe das bordas, para o jogador conseguir alcançar.
+func fairSpawnX(x, size float64) float64 {
+	x = clampSpawnX(x, size)
+	min := float64(spawnFairMargin)
+	max := ScreenWidth - size - float64(spawnFairMargin)
+	if max < min {
+		return x
+	}
+	if x < min {
+		return min
+	}
+	if x > max {
+		return max
+	}
+	return x
 }
 
 func clampSpawnX(x, size float64) float64 {
@@ -82,16 +110,79 @@ func clampSpawnX(x, size float64) float64 {
 	return x
 }
 
-type levelSection struct {
+// sectionDef descreve um trecho da fase: quando começa, seu nome, o aviso
+// exibido e o tema visual do bioma.
+type sectionDef struct {
 	startTick int
 	name      string
 	warning   string
-	bg        color.RGBA
+	theme     bgTheme
 }
+
+// waveDef é a descrição declarativa (dados) de uma aparição agendada.
+type waveDef struct {
+	startTick int
+	kind      enemyKind
+	count     int
+	interval  int
+	formation formation
+	spawnX    float64
+	fromLeft  bool
+	hasDrop   bool
+	drop      powerupType
+}
+
+// stageDef é uma fase inteira descrita como dados: trechos, ondas e se termina
+// em um chefe. Novas fases são acrescentadas escrevendo dados, não lógica.
+type stageDef struct {
+	name     string
+	sections []sectionDef
+	waves    []waveDef
+	hasBoss  bool
+}
+
+// endBuffer devolve o instante em que a fase pode preparar o chefe/transição:
+// um respiro após a última aparição agendada.
+const stageEndBuffer = 400
+
+func (d *stageDef) duration() int {
+	max := 0
+	for _, w := range d.waves {
+		if w.startTick > max {
+			max = w.startTick
+		}
+	}
+	return max + stageEndBuffer
+}
+
+// stageBuilder monta um stageDef de forma legível, no mesmo estilo declarativo
+// das ondas originais (dados, não código de controle).
+type stageBuilder struct{ d stageDef }
+
+func newStageBuilder(name string) *stageBuilder { return &stageBuilder{d: stageDef{name: name}} }
+
+func (b *stageBuilder) section(start int, name, warning string, th bgTheme) {
+	b.d.sections = append(b.d.sections, sectionDef{startTick: start, name: name, warning: warning, theme: th})
+}
+
+func (b *stageBuilder) wave(start int, kind enemyKind, count, interval int, f formation, x float64, fromLeft bool) {
+	b.d.waves = append(b.d.waves, waveDef{startTick: start, kind: kind, count: count, interval: interval, formation: f, spawnX: x, fromLeft: fromLeft})
+}
+
+// drop marca a última onda adicionada como portadora de um power-up garantido.
+func (b *stageBuilder) drop(kind powerupType) {
+	w := &b.d.waves[len(b.d.waves)-1]
+	w.hasDrop = true
+	w.drop = kind
+}
+
+func (b *stageBuilder) def() *stageDef { return &b.d }
 
 type Level struct {
 	events          []*waveEvent
-	sections        []levelSection
+	sections        []sectionDef
+	duration        int
+	hasBoss         bool
 	tick            int
 	section         int
 	announce        string
@@ -99,71 +190,31 @@ type Level struct {
 	nextFormationID int
 }
 
-func newLevel() *Level {
-	l := &Level{sections: phase1Sections()}
-
-	add := func(start int, kind enemyKind, count, interval int, f formation, x float64, fromLeft bool) {
+// newLevelFromStage constrói o estado de execução de uma fase a partir da sua
+// descrição declarativa.
+func newLevelFromStage(def *stageDef) *Level {
+	l := &Level{
+		sections: def.sections,
+		duration: def.duration(),
+		hasBoss:  def.hasBoss,
+	}
+	for _, wd := range def.waves {
 		l.events = append(l.events, &waveEvent{
-			startTick: start, kind: kind, count: count,
-			interval: interval, formation: f, spawnX: x, fromLeft: fromLeft,
+			startTick: wd.startTick, kind: wd.kind, count: wd.count,
+			interval: wd.interval, formation: wd.formation, spawnX: wd.spawnX,
+			fromLeft: wd.fromLeft, hasDrop: wd.hasDrop, drop: wd.drop,
 		})
 	}
-	// drop marca o último evento adicionado como portador de um power-up garantido.
-	drop := func(kind powerupType) {
-		ev := l.events[len(l.events)-1]
-		ev.hasDrop = true
-		ev.drop = kind
-	}
-
-	// Trecho 1 - Campos do reino: corvos espaçados, introdução acessível.
-	add(120, kindCrow, 1, 0, formationLine, 60, false)
-	add(600, kindCrow, 1, 0, formationV, 120, false)
-	drop(powerFire)
-	add(1200, kindCrow, 2, 90, formationLine, 40, false)
-	add(1900, kindCrow, 1, 0, formationV, 150, false)
-	add(2400, kindCrow, 2, 90, formationLine, 90, false)
-
-	// Trecho 2 - Vila atacada: harpias com projéteis surgem entre corvos.
-	add(2760, kindHarpy, 3, 70, formationSingle, 40, false)
-	drop(powerIce)
-	add(3200, kindCrow, 2, 80, formationLine, 120, false)
-	add(3800, kindHarpy, 2, 90, formationSingle, 170, false)
-	add(4300, kindCrow, 1, 0, formationV, 90, false)
-	drop(powerHeal)
-	add(4800, kindHarpy, 3, 80, formationSingle, 60, false)
-
-	// Trecho 3 - Muralhas: gárgulas pelas laterais protegidas por harpias.
-	add(5460, kindGargoyle, 1, 0, formationSingle, 60, true)
-	drop(powerLight)
-	add(5560, kindHarpy, 2, 80, formationSingle, 40, false)
-	add(6100, kindGargoyle, 1, 0, formationSingle, 170, false)
-	add(6600, kindHarpy, 3, 70, formationSingle, 150, false)
-	add(7100, kindGargoyle, 1, 0, formationSingle, 100, true)
-	drop(powerHeal)
-	add(7400, kindHarpy, 2, 80, formationSingle, 90, false)
-
-	// Trecho 4 - Aproximação do castelo: wyverns e formações combinadas.
-	add(8160, kindWyvern, 1, 0, formationSingle, 60, false)
-	drop(powerShield)
-	add(8500, kindHarpy, 3, 70, formationSingle, 120, false)
-	add(8900, kindWyvern, 1, 0, formationSingle, 160, false)
-	add(9200, kindCrow, 2, 80, formationLine, 40, false)
-	add(9500, kindWyvern, 1, 0, formationSingle, 100, false)
-
 	if dev.startSection > 0 {
 		l.skipToSection(dev.startSection)
 	}
 	return l
 }
 
-func phase1Sections() []levelSection {
-	return []levelSection{
-		{startTick: 0, name: "Campos do reino", warning: "", bg: color.RGBA{0x0a, 0x0a, 0x1e, 0xff}},
-		{startTick: 2700, name: "Vila atacada", warning: "A vila esta sob ataque!", bg: color.RGBA{0x1e, 0x12, 0x12, 0xff}},
-		{startTick: 5400, name: "Muralhas", warning: "Aproximando-se das muralhas", bg: color.RGBA{0x12, 0x14, 0x24, 0xff}},
-		{startTick: 8100, name: "Aproximacao do castelo", warning: "O castelo se aproxima...", bg: color.RGBA{0x1a, 0x10, 0x22, 0xff}},
-	}
-}
+func newLevel() *Level { return newLevelFromStage(stage1()) }
+
+// phase1Sections mantém a lista de trechos da fase 1 (usada por testes).
+func phase1Sections() []sectionDef { return stage1().sections }
 
 // update avança um passo da linha do tempo e devolve os inimigos criados.
 func (l *Level) update() []*Enemy {
@@ -194,7 +245,7 @@ func (l *Level) update() []*Enemy {
 			}
 			spawned = append(spawned, newEnemies...)
 			ev.spawned++
-			ev.nextSpawnTick = l.tick + ev.interval
+			ev.nextSpawnTick = l.tick + jitterSpawnInterval(ev.interval)
 		}
 		if ev.spawned >= ev.count {
 			ev.done = true
@@ -243,7 +294,10 @@ func (l *Level) readyForBoss(enemiesRemaining int) bool {
 }
 
 func (l *Level) theme() bgTheme {
-	return themeForSection(l.section)
+	if l.section < 0 || l.section >= len(l.sections) {
+		return sectionThemes[0]
+	}
+	return l.sections[l.section].theme
 }
 
 func (l *Level) background() color.RGBA {
@@ -255,7 +309,10 @@ func (l *Level) sectionName() string {
 }
 
 func (l *Level) progress() float64 {
-	p := float64(l.tick) / float64(phaseDurationTicks)
+	if l.duration <= 0 {
+		return 0
+	}
+	p := float64(l.tick) / float64(l.duration)
 	if p > 1 {
 		return 1
 	}

@@ -141,6 +141,61 @@ func TestParticleBurstRespectsCap(t *testing.T) {
 	}
 }
 
+func TestEnemyTelegraphsBeforeFiring(t *testing.T) {
+	e := newHarpy(50)
+	var bullets []*EnemyBullet
+	ctx := &enemyContext{bullets: &bullets}
+
+	sawTelegraphBeforeShot := false
+	for i := 0; i < harpyFireInterval+1; i++ {
+		e.update(ctx)
+		if len(bullets) > 0 {
+			break
+		}
+		if e.telegraph > 0 {
+			sawTelegraphBeforeShot = true
+		}
+	}
+
+	if len(bullets) == 0 {
+		t.Fatal("a harpia deveria ter disparado dentro do intervalo")
+	}
+	if !sawTelegraphBeforeShot {
+		t.Error("o inimigo deveria avisar (telegraph) antes de disparar")
+	}
+}
+
+func TestFormationBonusSpawnsPopup(t *testing.T) {
+	g := &Game{formations: map[int]*formationTracker{}}
+	g.formations[1] = &formationTracker{total: 2}
+	for i := 0; i < 2; i++ {
+		e := newCrow(0)
+		e.formationID = 1
+		e.dead = true
+		g.enemies = append(g.enemies, e)
+	}
+
+	g.removeDead()
+
+	if len(g.popups) == 0 {
+		t.Error("destruir uma formação completa deveria gerar um popup de bônus")
+	}
+}
+
+func TestSectionBonusSpawnsPopup(t *testing.T) {
+	g := New()
+	g.startNewGame()
+	g.lastSection = 0
+	g.sectionDamaged = false
+	g.level.section = 1
+
+	g.checkSectionBonus()
+
+	if len(g.popups) == 0 {
+		t.Error("concluir um trecho sem dano deveria gerar um popup de bônus")
+	}
+}
+
 func TestHitStopFreezesGameplay(t *testing.T) {
 	g := New()
 	g.startNewGame()

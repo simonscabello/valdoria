@@ -71,7 +71,10 @@ func TestOffscreenBulletIsRemoved(t *testing.T) {
 }
 
 func TestOffscreenEnemyEscapesWithoutScore(t *testing.T) {
-	g := &Game{player: newPlayer(), formations: map[int]*formationTracker{}}
+	g := New()
+	g.state = statePlaying
+	g.lives = 3
+	g.formations = map[int]*formationTracker{}
 	e := newCrow(50)
 	e.y = ScreenHeight + 100
 	g.enemies = append(g.enemies, e)
@@ -80,12 +83,50 @@ func TestOffscreenEnemyEscapesWithoutScore(t *testing.T) {
 	if !e.escaped || !e.dead {
 		t.Fatal("inimigo fora da tela deveria escapar e ser marcado para remoção")
 	}
+	if g.lives != 2 {
+		t.Fatalf("fuga pela base deveria custar uma vida, lives=%d", g.lives)
+	}
 	g.removeDead()
 	if g.enemiesDefeated != 0 {
 		t.Error("inimigo que escapou não deveria contar como abatido")
 	}
 	if len(g.enemies) != 0 {
 		t.Error("inimigo que escapou deveria ser removido")
+	}
+}
+
+func TestSideExitDoesNotCostLife(t *testing.T) {
+	g := New()
+	g.state = statePlaying
+	g.lives = 3
+	e := newGargoyle(true, 70, 30)
+	e.x = -gargoyleSize - 60 // já saiu pela lateral
+	g.enemies = append(g.enemies, e)
+
+	g.updateEnemies()
+	if !e.escaped || !e.dead {
+		t.Fatal("gárgula fora da lateral deveria ser removida")
+	}
+	if g.lives != 3 {
+		t.Fatalf("saída lateral não deveria custar vida, lives=%d", g.lives)
+	}
+}
+
+func TestLeakDuringInvincibilityDoesNotStack(t *testing.T) {
+	g := New()
+	g.state = statePlaying
+	g.lives = 3
+	g.player.invincible = 60
+	e := newCrow(50)
+	e.y = ScreenHeight + 10
+	g.enemies = append(g.enemies, e)
+
+	g.updateEnemies()
+	if g.lives != 3 {
+		t.Fatalf("durante invencibilidade a fuga não deveria empilhar vidas perdidas, lives=%d", g.lives)
+	}
+	if !e.dead {
+		t.Fatal("inimigo ainda deveria ser removido")
 	}
 }
 

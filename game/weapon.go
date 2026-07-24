@@ -55,21 +55,45 @@ func fireWeapon(w weaponType, level int, x, topY float64) []*Bullet {
 	}
 }
 
-// Lança de Luz: disparos retos. Sobe de 2 a 4 projéteis conforme o nível.
+// Lança de Luz: disparos retos e densos. DPS alto no foco; Nv3 perfura 1 alvo.
 func fireLight(level int, x, topY float64) []*Bullet {
 	speed := lightBulletSpeed
 	if level >= 3 {
 		speed = lightBulletSpeedFast
 	}
+	pierce := 0
+	if level >= 3 {
+		pierce = lightPierceMax
+	}
 	count := 1 + level
-	return straightSpread(count, x, topY, speed, lightBulletDamage, 0, lightColor)
+	out := straightSpread(count, x, topY, speed, lightBulletDamage, pierce, lightColor)
+	for _, b := range out {
+		b.trail = true
+		b.element = weaponLight
+	}
+	return out
 }
 
-// Chamas do Dragão: leque de projéteis com dano individual menor.
+// weaponShootSFX escolhe o som de disparo com a assinatura de cada arma.
+func weaponShootSFX(w weaponType) soundID {
+	switch w {
+	case weaponFlame:
+		return sfxShootFlame
+	case weaponIce:
+		return sfxShootIce
+	default:
+		return sfxShoot
+	}
+}
+
+// Chamas do Dragão: leque curto para cobertura local (não varre a tela inteira).
 func fireFlame(level int, x, topY float64) []*Bullet {
 	count := 3
-	if level >= 2 {
+	switch {
+	case level >= 3:
 		count = 5
+	case level >= 2:
+		count = 4
 	}
 	out := make([]*Bullet, 0, count)
 	for _, angle := range fanAngles(count, flameSpread) {
@@ -77,20 +101,29 @@ func fireFlame(level int, x, topY float64) []*Bullet {
 		vy := -math.Cos(angle) * flameBulletSpeed
 		b := newBullet(x-bulletWidth/2, topY, vx, vy, flameBulletDamage, 0, flameColor)
 		b.trail = true
+		b.element = weaponFlame
 		out = append(out, b)
 	}
 	return out
 }
 
-// Lanças de Gelo: lentas, fortes e capazes de atravessar inimigos.
+// Lanças de Gelo: cadência média, alto dano e perfuração — anti-formação.
 func fireIce(level int, x, topY float64) []*Bullet {
 	pierce := icePierce
+	if level >= 2 {
+		pierce = icePierce + 1
+	}
 	if level >= 3 {
 		pierce = icePierceMax
 	}
-	out := straightSpread(level, x, topY, iceBulletSpeed, iceBulletDamage, pierce, iceColor)
+	count := level
+	if count < 1 {
+		count = 1
+	}
+	out := straightSpread(count, x, topY, iceBulletSpeed, iceBulletDamage, pierce, iceColor)
 	for _, b := range out {
 		b.trail = true
+		b.element = weaponIce
 	}
 	return out
 }

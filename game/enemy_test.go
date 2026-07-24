@@ -94,3 +94,61 @@ func TestAimVelocityZeroDistanceFallsDown(t *testing.T) {
 		t.Errorf("alvo coincidente deveria descer reto, obtive (%v, %v)", vx, vy)
 	}
 }
+
+func TestMageFiresFullRing(t *testing.T) {
+	e := newMage(100)
+	e.y = mageStopY // já posicionado para atirar
+	var bullets []*EnemyBullet
+	ctx := &enemyContext{playerX: 100, playerY: 300, bullets: &bullets}
+
+	for i := 0; i < mageFireInterval; i++ {
+		e.update(ctx)
+	}
+
+	if len(bullets) != mageRingCount {
+		t.Fatalf("o feiticeiro deveria soltar um anel de %d projéteis, veio %d", mageRingCount, len(bullets))
+	}
+}
+
+func TestBallistaFiresAimedBurst(t *testing.T) {
+	e := newBallista(100)
+	var bullets []*EnemyBullet
+	ctx := &enemyContext{playerX: 100, playerY: 300, bullets: &bullets}
+
+	// Intervalo + a rajada completa espaçada.
+	for i := 0; i < ballistaFireInterval+ballistaBurst*ballistaBurstGap+2; i++ {
+		e.update(ctx)
+	}
+
+	if len(bullets) < ballistaBurst {
+		t.Fatalf("a balista deveria disparar uma rajada de %d virotes, veio %d", ballistaBurst, len(bullets))
+	}
+	// Todos os virotes descem em direção ao jogador.
+	for i, b := range bullets {
+		if b.vy <= 0 {
+			t.Errorf("virote %d deveria descer, vy=%v", i, b.vy)
+		}
+	}
+}
+
+func TestScaledEnemyHealthByDifficulty(t *testing.T) {
+	t.Cleanup(func() { setDifficulty(diffNormal) })
+
+	setDifficulty(diffNormal)
+	base := scaledEnemyHealth(wyvernHealth)
+	if base != wyvernHealth {
+		t.Errorf("no Normal a vida deveria ser a base %d, foi %d", wyvernHealth, base)
+	}
+
+	setDifficulty(diffHard)
+	hard := scaledEnemyHealth(wyvernHealth)
+	if hard <= wyvernHealth {
+		t.Errorf("no Difícil a vida deveria ser maior que %d, foi %d", wyvernHealth, hard)
+	}
+
+	setDifficulty(diffEasy)
+	easy := scaledEnemyHealth(wyvernHealth)
+	if easy >= wyvernHealth {
+		t.Errorf("no Fácil a vida deveria ser menor que %d, foi %d", wyvernHealth, easy)
+	}
+}

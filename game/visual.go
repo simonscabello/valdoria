@@ -45,6 +45,14 @@ const (
 	damageFlashDuration = 12
 	damageFlashAlpha    = 70
 
+	// Escurecimento de impacto ao usar a Invocação Ancestral (bomba).
+	bombDarkenFrames = 10
+	bombDarkenAlpha  = 150
+
+	// Escurecimento do cenário: empurra o parallax para trás, dando contraste e
+	// leitura clara aos elementos de jogo (inimigos, chefe, projéteis).
+	sceneDimAlpha = 104
+
 	// Parallax do cenário.
 	cloudLayerSpeed     = 0.25
 	hillLayerSpeed      = 0.6
@@ -147,12 +155,51 @@ var sectionThemes = []bgTheme{
 	},
 }
 
-func themeForSection(section int) bgTheme {
-	if section < 0 || section >= len(sectionThemes) {
-		return sectionThemes[0]
+// Biomas adicionais das fases 2 e 3. Reutilizam os estilos de estrutura
+// existentes com paletas próprias, dando variedade visual sem novo código de
+// desenho.
+var (
+	themeForest = bgTheme{ // Bosque sombrio (fase 2)
+		sky:       color.RGBA{0x08, 0x14, 0x0e, 0xff},
+		cloud:     color.RGBA{0x18, 0x2a, 0x20, 0xff},
+		hill:      color.RGBA{0x10, 0x20, 0x16, 0xff},
+		structure: color.RGBA{0x14, 0x2a, 0x1a, 0xff},
+		accent:    color.RGBA{0x3a, 0x7a, 0x44, 0xff},
+		dust:      color.RGBA{0x8a, 0xc0, 0x90, 0xff},
+		style:     styleFields,
 	}
-	return sectionThemes[section]
-}
+	themeSwamp = bgTheme{ // Pântano corrompido (fase 2)
+		sky:       color.RGBA{0x12, 0x0e, 0x1c, 0xff},
+		cloud:     color.RGBA{0x22, 0x1a, 0x2e, 0xff},
+		hill:      color.RGBA{0x18, 0x14, 0x22, 0xff},
+		structure: color.RGBA{0x24, 0x1c, 0x30, 0xff},
+		accent:    color.RGBA{0x7a, 0x4a, 0xb0, 0xff},
+		dust:      color.RGBA{0xa0, 0x80, 0xd0, 0xff},
+		style:     styleFields,
+	}
+	themeCanyon = bgTheme{ // Desfiladeiro (fase 3)
+		sky:       color.RGBA{0x1c, 0x10, 0x0c, 0xff},
+		cloud:     color.RGBA{0x30, 0x1e, 0x14, 0xff},
+		hill:      color.RGBA{0x24, 0x16, 0x10, 0xff},
+		structure: color.RGBA{0x3a, 0x24, 0x18, 0xff},
+		accent:    color.RGBA{0xc0, 0x6a, 0x30, 0xff},
+		dust:      color.RGBA{0xe0, 0xa0, 0x60, 0xff},
+		style:     styleWalls,
+	}
+	themeLair = bgTheme{ // Covil do dragão (fase 3, chefe)
+		sky:       color.RGBA{0x20, 0x08, 0x08, 0xff},
+		cloud:     color.RGBA{0x3a, 0x14, 0x12, 0xff},
+		hill:      color.RGBA{0x28, 0x0e, 0x0e, 0xff},
+		structure: color.RGBA{0x3c, 0x18, 0x16, 0xff},
+		accent:    color.RGBA{0xff, 0x5a, 0x28, 0xff},
+		dust:      color.RGBA{0xff, 0x90, 0x50, 0xff},
+		style:     styleVillageFire,
+	}
+)
+
+// enemyOutline é o contorno escuro desenhado atrás dos corpos para destacá-los
+// do cenário, reforçando a leitura das silhuetas.
+var enemyOutline = color.RGBA{0x0a, 0x08, 0x12, 0xff}
 
 // withAlpha devolve a cor com o canal alfa ajustado, útil para fades e rastros.
 func withAlpha(c color.RGBA, a uint8) color.RGBA {

@@ -27,7 +27,9 @@ A busca é feita nesta ordem (`.ogg` antes de `.wav`). Qualquer taxa de amostrag
 
 | Arquivo        | Uso                          |
 | -------------- | ---------------------------- |
-| `shoot`        | Disparo do jogador           |
+| `shoot`        | Disparo (Lança de Luz)       |
+| `shoot_flame`  | Disparo (Chamas do Dragão)   |
+| `shoot_ice`    | Disparo (Lanças de Gelo)     |
 | `enemy_down`   | Inimigo destruído            |
 | `player_hit`   | Dano no jogador              |
 | `pickup`       | Coleta de power-up           |

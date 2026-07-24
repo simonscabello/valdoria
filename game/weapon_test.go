@@ -5,20 +5,39 @@ import (
 	"testing"
 )
 
-func TestWeaponSwitchResetsToLevelOne(t *testing.T) {
+func TestWeaponSwitchKeepsLevel(t *testing.T) {
 	p := newPlayer()
-	p.gainWeapon(weaponLight)
-	p.gainWeapon(weaponLight)
-	if p.weaponLevel != 3 {
-		t.Fatalf("nível = %d, quero 3", p.weaponLevel)
+	p.gainWeapon(weaponLight) // Nv2
+	p.gainWeapon(weaponLight) // Nv3
+	if p.weaponLevel != maxWeaponLevel {
+		t.Fatalf("nível = %d, quero %d", p.weaponLevel, maxWeaponLevel)
 	}
 
 	p.gainWeapon(weaponIce)
 	if p.weapon != weaponIce {
 		t.Error("arma deveria ter trocado para gelo")
 	}
-	if p.weaponLevel != 1 {
-		t.Errorf("nível após troca = %d, quero 1", p.weaponLevel)
+	if p.weaponLevel != maxWeaponLevel {
+		t.Errorf("trocar de arma não deveria rebaixar o poder: nível %d, quero %d", p.weaponLevel, maxWeaponLevel)
+	}
+}
+
+// A runa de uma arma diferente troca o tipo mantendo o nível atual (nunca é uma
+// perda de poder), enquanto a runa da arma equipada continua subindo o nível.
+func TestWeaponSwitchAtLowLevelPreservesLevel(t *testing.T) {
+	p := newPlayer() // Luz Nv1
+	p.gainWeapon(weaponFlame)
+	if p.weapon != weaponFlame || p.weaponLevel != 1 {
+		t.Fatalf("trocar no nível 1 deveria manter Nv1, foi arma %d nível %d", p.weapon, p.weaponLevel)
+	}
+	p.gainWeapon(weaponFlame) // mesma arma -> sobe
+	p.gainWeapon(weaponFlame) // mesma arma -> sobe (cap)
+	if p.weaponLevel != maxWeaponLevel {
+		t.Fatalf("mesma runa deveria subir até o máximo, foi %d", p.weaponLevel)
+	}
+	p.gainWeapon(weaponLight) // troca de volta mantendo o nível alto
+	if p.weapon != weaponLight || p.weaponLevel != maxWeaponLevel {
+		t.Errorf("troca deveria preservar o nível %d na nova arma, foi arma %d nível %d", maxWeaponLevel, p.weapon, p.weaponLevel)
 	}
 }
 
@@ -92,6 +111,7 @@ func TestLightBulletStopsAtFirstEnemy(t *testing.T) {
 		g.enemies = append(g.enemies, e)
 	}
 	shot := newBullet(100, 100, 0, -lightBulletSpeed, lightBulletDamage, 0, lightColor)
+	shot.element = weaponFlame // só testa parar no impacto; cadeia é outro teste
 	g.bullets = append(g.bullets, shot)
 
 	g.bulletEnemyCollisions()
@@ -128,5 +148,43 @@ func TestFanAnglesAreSymmetric(t *testing.T) {
 	single := fanAngles(1, 1.0)
 	if len(single) != 1 || single[0] != 0 {
 		t.Errorf("contagem 1 deveria dar [0], deu %v", single)
+	}
+}
+
+func TestWeaponBalanceIdentities(t *testing.T) {
+	// Chamas Nv3: leque fechado (não varre a tela) e cadência abaixo da Luz.
+	flame := fireFlame(3, 120, 200)
+	if len(flame) != 5 {
+		t.Fatalf("chamas Nv3: %d tiros, quero 5", len(flame))
+	}
+	if flameSpread > 0.65 {
+		t.Fatalf("leque de chamas ainda largo demais: %v", flameSpread)
+	}
+	if weaponCooldown(weaponFlame, 3) <= weaponCooldown(weaponLight, 3) {
+		t.Fatalf("chamas Nv3 não deveria atirar mais rápido que a luz")
+	}
+
+	// Luz: mais dano por tiro e perfuração no Nv3.
+	light := fireLight(3, 120, 200)
+	if len(light) != 4 {
+		t.Fatalf("luz Nv3: %d tiros, quero 4", len(light))
+	}
+	if light[0].damage <= flameBulletDamage {
+		t.Fatalf("luz deveria ferir mais que cada chama (%d vs %d)", light[0].damage, flameBulletDamage)
+	}
+	if light[0].pierce < 1 {
+		t.Fatal("luz Nv3 deveria perfurar")
+	}
+
+	// Gelo: alto dano + perfuração.
+	ice := fireIce(3, 120, 200)
+	if len(ice) != 3 {
+		t.Fatalf("gelo Nv3: %d tiros, quero 3", len(ice))
+	}
+	if ice[0].damage <= lightBulletDamage {
+		t.Fatalf("gelo deveria ser o tiro mais pesado (%d vs luz %d)", ice[0].damage, lightBulletDamage)
+	}
+	if ice[0].pierce < icePierceMax {
+		t.Fatalf("gelo Nv3 pierce=%d, quero %d", ice[0].pierce, icePierceMax)
 	}
 }

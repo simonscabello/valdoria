@@ -15,6 +15,15 @@ const (
 	ScreenHeight = 320
 )
 
+// gameMode distingue a campanha (fases + chefe) do modo de sobrevivência
+// (ondas infinitas com dificuldade crescente).
+type gameMode int
+
+const (
+	modeCampaign gameMode = iota
+	modeSurvival
+)
+
 type state int
 
 const (
@@ -50,18 +59,25 @@ type Game struct {
 	hitStop      int
 	scene        *ebiten.Image
 
-	level       *Level
-	timeScale   int
-	resumeState state
+	level         *Level
+	stages        []*stageDef
+	stageIndex    int
+	mode          gameMode
+	survivalTimer int
+	timeScale     int
+	resumeState   state
 
 	lives           int
 	bombCharges     int
 	bombEffectTimer int
 
-	score      int
-	highScore  int
-	combo      int
-	comboTimer int
+	score        int
+	highScore    int
+	survivalBest int
+	combo        int
+	comboTimer   int
+
+	save saveData
 
 	sectionDamaged bool
 	lastSection    int
@@ -82,7 +98,7 @@ type Game struct {
 	audio *AudioManager
 }
 
-const menuItemCount = 4
+const menuItemCount = 6
 
 var gameOverOptions = []string{"Tentar novamente", "Voltar ao menu"}
 var victoryOptions = []string{"Jogar novamente", "Voltar ao menu"}
@@ -96,10 +112,32 @@ type formationTracker struct {
 func New() *Game {
 	g := &Game{}
 	g.audio = getAudio()
+
+	// Carrega recordes e preferências antes do reset (a dificuldade influencia
+	// vidas/bombas iniciais).
+	g.save = loadSave()
+	setDifficulty(g.save.Difficulty)
+	g.audio.muted = g.save.Muted
+
 	g.reset()
+
+	g.highScore = g.save.HighScore
+	g.survivalBest = g.save.SurvivalBest
+	g.shakeSetting = g.save.Shake
+
 	g.initStars()
 	g.enterMenu()
 	return g
+}
+
+// persist sincroniza o estado persistível e grava o save (best-effort).
+func (g *Game) persist() {
+	g.save.HighScore = g.highScore
+	g.save.SurvivalBest = g.survivalBest
+	g.save.Difficulty = currentDifficulty
+	g.save.Shake = g.shakeSetting
+	g.save.Muted = g.audio.muted
+	g.save.write()
 }
 
 // reset cria uma sessão completamente nova, sem qualquer estado anterior.
@@ -111,11 +149,14 @@ func (g *Game) reset() {
 	g.enemies = g.enemies[:0]
 	g.enemyBullets = g.enemyBullets[:0]
 	g.powerups = g.powerups[:0]
-	g.level = newLevel()
+	g.stages = campaignStages()
+	g.stageIndex = 0
+	g.level = newLevelFromStage(g.stages[0])
 	g.timeScale = dev.timeScale
 
-	g.lives = startingLives
-	g.bombCharges = bombStartCharges
+	dp := diffParams()
+	g.lives = dp.startLives
+	g.bombCharges = dp.startBombs
 	g.bombEffectTimer = 0
 	g.score = 0
 	g.combo = 0
@@ -125,6 +166,7 @@ func (g *Game) reset() {
 	g.formations = map[int]*formationTracker{}
 	g.boss = nil
 
+	g.survivalTimer = 90
 	g.enemiesDefeated = 0
 	g.maxMult = 1
 	g.elapsedTicks = 0
@@ -161,6 +203,23 @@ func (g *Game) startBoss() {
 	g.state = stateBoss
 }
 
+// advanceStage encadeia para a próxima fase da campanha ao concluir a atual sem
+// chefe, mantendo pontuação/poder e anunciando a nova região.
+func (g *Game) advanceStage() {
+	g.stageIndex++
+	if g.stageIndex >= len(g.stages) {
+		g.startBoss() // salvaguarda: sem próxima fase, encerra no chefe
+		return
+	}
+	g.enemyBullets = g.enemyBullets[:0]
+	g.level = newLevelFromStage(g.stages[g.stageIndex])
+	g.lastSection = g.level.section
+	g.sectionDamaged = false
+	g.formations = map[int]*formationTracker{}
+	g.level.announce = "Nova regiao: " + g.stages[g.stageIndex].name
+	g.level.announceTimer = announceDuration
+}
+
 func (g *Game) Update() error {
 	if g.fade > 0 {
 		g.fade--
@@ -169,6 +228,7 @@ func (g *Game) Update() error {
 
 	if inpututil.IsKeyJustPressed(ebiten.KeyM) {
 		g.audio.toggleMute()
+		g.persist()
 	}
 	g.updateMusicForState()
 	g.audio.update()
@@ -223,16 +283,29 @@ func (g *Game) updateMenu() error {
 	g.audio.playSFX(sfxMenu)
 	switch g.menuIndex {
 	case 0:
+		g.mode = modeCampaign
 		g.startNewGame()
 	case 1:
+		g.mode = modeSurvival
+		g.startNewGame()
+	case 2:
+		g.cycleDifficulty()
+	case 3:
 		g.state = stateControls
 		g.fade = fadeDuration
-	case 2:
+	case 4:
 		g.cycleShake()
-	case 3:
+		g.persist()
+	case 5:
 		return ebiten.Termination
 	}
 	return nil
+}
+
+// cycleDifficulty alterna Fácil → Normal → Difícil e persiste a escolha.
+func (g *Game) cycleDifficulty() {
+	setDifficulty((currentDifficulty + 1) % difficultyCount)
+	g.persist()
 }
 
 func (g *Game) updateControls() {
@@ -292,7 +365,11 @@ func (g *Game) updatePlay() {
 	g.player.update()
 	if shots := g.player.tryShoot(); len(shots) > 0 {
 		g.bullets = append(g.bullets, shots...)
-		g.audio.playSFX(sfxShoot)
+		g.audio.playSFX(weaponShootSFX(g.player.weapon))
+		if g.player.weapon == weaponFlame {
+			// Brasas no bocal reforçam a sensação de fogo das Chamas do Dragão.
+			g.spawnBurst(g.player.centerX(), g.player.y, 2, 1.4, 10, 2, false, flameColor)
+		}
 	}
 	g.handleDebugSpawns()
 	g.handleBomb()
@@ -310,7 +387,11 @@ func (g *Game) updatePlay() {
 	if g.state == statePlaying {
 		g.handleTimeScaleToggle()
 		for i := 0; i < g.timeScale; i++ {
-			g.spawnFromLevel()
+			if g.mode == modeSurvival {
+				g.spawnSurvival()
+			} else {
+				g.spawnFromLevel()
+			}
 		}
 	}
 	if g.state == stateBoss {
@@ -336,16 +417,19 @@ func (g *Game) updatePlay() {
 	if g.player.health <= 0 {
 		g.loseLife()
 	}
-	if g.score > g.highScore {
-		g.highScore = g.score
-	}
-	if g.state == statePlaying {
+	g.updateBestScore()
+	if g.state == statePlaying && g.mode == modeCampaign {
 		g.checkSectionBonus()
 		if g.level.readyForBoss(len(g.enemies)) {
 			if !g.sectionDamaged {
 				g.score += waveNoDamageBonus
+				g.spawnBonusPopup(ScreenWidth/2, 90, waveNoDamageBonus)
 			}
-			g.startBoss()
+			if g.level.hasBoss {
+				g.startBoss()
+			} else {
+				g.advanceStage()
+			}
 		}
 	}
 	if g.state == stateBoss {
@@ -416,6 +500,7 @@ func (g *Game) checkBossDefeat() {
 	g.menuIndex = 0
 	g.fade = fadeDuration
 	g.audio.playSFX(sfxVictory)
+	g.persist()
 }
 
 func (g *Game) spawnFromLevel() {
@@ -424,6 +509,74 @@ func (g *Game) spawnFromLevel() {
 			g.registerFormationMember(e.formationID)
 		}
 		g.enemies = append(g.enemies, e)
+	}
+}
+
+// updateBestScore mantém o recorde do modo atual atualizado em tempo real.
+func (g *Game) updateBestScore() {
+	if g.mode == modeSurvival {
+		if g.score > g.survivalBest {
+			g.survivalBest = g.score
+		}
+		return
+	}
+	if g.score > g.highScore {
+		g.highScore = g.score
+	}
+}
+
+// spawnSurvival gera inimigos aleatórios em ritmo e variedade crescentes ao
+// longo do tempo — o modo não tem fim: dura enquanto o jogador sobreviver.
+func (g *Game) spawnSurvival() {
+	if g.survivalTimer > 0 {
+		g.survivalTimer--
+		return
+	}
+	minute := g.elapsedTicks / 3600
+	interval := 58 - minute*7
+	if interval < 20 {
+		interval = 20
+	}
+	g.survivalTimer = interval
+	g.spawnRandomEnemy(minute)
+	// A partir de ~1 min, às vezes um segundo inimigo entra junto para adensar.
+	if minute >= 1 && rng.Intn(2) == 0 {
+		g.spawnRandomEnemy(minute)
+	}
+}
+
+// spawnRandomEnemy escolhe um inimigo de um repertório que cresce com o tempo.
+func (g *Game) spawnRandomEnemy(minute int) {
+	pool := []enemyKind{kindCrow, kindCrow, kindHarpy}
+	if minute >= 1 {
+		pool = append(pool, kindHarpy, kindGargoyle)
+	}
+	if minute >= 2 {
+		pool = append(pool, kindWyvern, kindMage)
+	}
+	if minute >= 3 {
+		pool = append(pool, kindBallista, kindWyvern, kindMage)
+	}
+	kind := pool[rng.Intn(len(pool))]
+	e := spawnEnemy(kind, randX(enemySpawnSize(kind)), 0, rng.Intn(2) == 0)
+	g.enemies = append(g.enemies, e)
+}
+
+// enemySpawnSize devolve a largura usada para posicionar o spawn na horizontal.
+func enemySpawnSize(kind enemyKind) float64 {
+	switch kind {
+	case kindHarpy:
+		return harpySize
+	case kindGargoyle:
+		return gargoyleSize
+	case kindWyvern:
+		return wyvernSize
+	case kindBallista:
+		return ballistaSize
+	case kindMage:
+		return mageSize
+	default:
+		return crowSize
 	}
 }
 
@@ -443,6 +596,7 @@ func (g *Game) loseLife() {
 		g.menuIndex = 0
 		g.fade = fadeDuration
 		g.audio.playSFX(sfxGameOver)
+		g.persist()
 		return
 	}
 	g.respawn()
@@ -461,6 +615,7 @@ func (g *Game) checkSectionBonus() {
 	}
 	if !g.sectionDamaged {
 		g.score += waveNoDamageBonus
+		g.spawnBonusPopup(ScreenWidth/2, 90, waveNoDamageBonus)
 	}
 	g.sectionDamaged = false
 	g.lastSection = g.level.section
@@ -625,13 +780,42 @@ func (g *Game) updateEnemies() {
 		playerY: g.player.centerY(),
 		bullets: &g.enemyBullets,
 	}
+	leaked := false
 	for _, e := range g.enemies {
 		e.update(ctx)
+		if e.crossedBottom() {
+			e.escaped = true
+			e.dead = true
+			leaked = true
+			continue
+		}
 		if e.offScreen() {
 			e.escaped = true
 			e.dead = true
 		}
 	}
+	if leaked {
+		g.onEnemyLeaked()
+	}
+}
+
+// onEnemyLeaked: um ou mais inimigos passaram pela base da tela. Custa uma vida
+// (estilo shmup clássico). Durante invencibilidade, a fuga ainda remove o
+// inimigo, mas não empilha perdas em cascata.
+func (g *Game) onEnemyLeaked() {
+	if g.state != statePlaying && g.state != stateBoss {
+		return
+	}
+	if g.player.invincible > 0 {
+		return
+	}
+	g.sectionDamaged = true
+	g.combo = 0
+	g.comboTimer = 0
+	g.triggerDamageFlash()
+	g.addShake(shakeHitMagnitude)
+	g.audio.playSFX(sfxPlayerHit)
+	g.loseLife()
 }
 
 func (g *Game) updateEnemyBullets() {
@@ -674,6 +858,7 @@ func (g *Game) bulletBossCollisions() {
 			damage *= crystalBonus
 		}
 		boss.takeDamage(damage)
+		boss.applyWeaponHit(b.element)
 		b.dead = true
 	}
 }
@@ -702,14 +887,18 @@ func (g *Game) bulletEnemyCollisions() {
 				continue
 			}
 			e.takeDamage(b.damage)
+			e.applyWeaponHit(b.element)
 			b.hitEnemies = append(b.hitEnemies, e)
+			if b.element == weaponLight {
+				g.applyLightChain(e, b.damage)
+			}
 			if e.dead {
 				points := g.registerKill(e.score)
 				g.spawnDrop(e)
 				g.spawnExplosion(e.centerX(), e.centerY(), e.color)
 				g.spawnScorePopup(e.centerX(), e.y, points)
 				if e.kind == kindWyvern {
-					g.hitStop = hitStopBig // peso extra ao abater um inimigo grande
+					g.hitStop = hitStopBig
 				}
 			}
 			if b.pierce > 0 {
@@ -719,6 +908,28 @@ func (g *Game) bulletEnemyCollisions() {
 			b.dead = true
 			break
 		}
+	}
+}
+
+// applyLightChain: a Lança de Luz arremessa um arco dourado no inimigo mais
+// próximo — metade do dano + atordoamento curto (a surpresa da arma).
+func (g *Game) applyLightChain(from *Enemy, damage int) {
+	target := lightChainTarget(g.enemies, from.centerX(), from.centerY(), from)
+	if target == nil {
+		return
+	}
+	chain := int(float64(damage) * lightChainRatio)
+	if chain < 1 {
+		chain = 1
+	}
+	target.takeDamage(chain)
+	target.stun = lightChainStun
+	g.spawnTrail(target.centerX(), target.centerY(), lightColor)
+	if target.dead {
+		points := g.registerKill(target.score)
+		g.spawnDrop(target)
+		g.spawnExplosion(target.centerX(), target.centerY(), target.color)
+		g.spawnScorePopup(target.centerX(), target.y, points)
 	}
 }
 
@@ -814,7 +1025,7 @@ func (g *Game) spawnDrop(e *Enemy) {
 		g.powerups = append(g.powerups, newPowerup(e.drop, e.centerX(), e.centerY()))
 		return
 	}
-	if rng.Float64() < dropChance {
+	if rng.Float64() < scaledDropChance(dropChance) {
 		g.powerups = append(g.powerups, newPowerup(randomRune(), e.centerX(), e.centerY()))
 	}
 }
@@ -893,6 +1104,7 @@ func (g *Game) accountFormation(e *Enemy) {
 	}
 	if t.escaped == 0 {
 		g.score += formationBonus
+		g.spawnBonusPopup(e.centerX(), e.centerY(), formationBonus)
 	}
 	delete(g.formations, e.formationID)
 }
@@ -948,6 +1160,13 @@ func (g *Game) drawWorld(screen *ebiten.Image) {
 		vector.DrawFilledRect(screen, 0, 0, ScreenWidth, ScreenHeight, color.RGBA{0xff, 0x20, 0x20, alpha}, false)
 	}
 
+	// Escurecimento breve no disparo da Invocação Ancestral: dá peso ao golpe,
+	// como se o dragão ancestral cobrisse o céu por um instante.
+	if elapsed := bombEffectDuration - g.bombEffectTimer; g.bombEffectTimer > 0 && elapsed < bombDarkenFrames {
+		alpha := uint8(bombDarkenAlpha * (bombDarkenFrames - elapsed) / bombDarkenFrames)
+		vector.DrawFilledRect(screen, 0, 0, ScreenWidth, ScreenHeight, color.RGBA{0x10, 0x08, 0x18, alpha}, false)
+	}
+
 	g.drawOverlayHUD(screen)
 }
 
@@ -957,6 +1176,11 @@ func (g *Game) drawScene(dst *ebiten.Image) {
 	theme := g.level.theme()
 	dst.Fill(theme.sky)
 	g.drawParallax(dst, theme)
+
+	// Escurece o cenário para que os elementos de jogo (desenhados depois)
+	// saltem à frente, resolvendo a confusão entre fundo e inimigos.
+	vector.DrawFilledRect(dst, 0, 0, ScreenWidth, ScreenHeight, color.RGBA{0x06, 0x05, 0x0e, sceneDimAlpha}, false)
+
 	g.drawParticles(dst)
 
 	for _, p := range g.powerups {
@@ -1019,11 +1243,15 @@ func (g *Game) drawOverlayHUD(screen *ebiten.Image) {
 	}
 
 	if g.level.announceTimer > 0 && g.level.announce != "" {
-		ebitenutil.DebugPrintAt(screen, g.level.announce, ScreenWidth/2-len(g.level.announce)*3, 70)
+		label(screen, g.level.announce, ScreenWidth/2-len(g.level.announce)*3, 70)
 	}
 
 	if g.state == statePaused {
-		ebitenutil.DebugPrintAt(screen, "PAUSADO", ScreenWidth/2-24, ScreenHeight/2-4)
+		const pw, ph = 88, 28
+		px := float32(ScreenWidth/2 - pw/2)
+		py := float32(ScreenHeight/2 - ph/2)
+		drawUIPanel(screen, px, py, pw, ph)
+		drawTextCentered(screen, "PAUSADO", float64(ScreenHeight/2-5), uiHighlight)
 	}
 }
 
@@ -1051,84 +1279,118 @@ func (g *Game) drawStarsBackground(screen *ebiten.Image) {
 	g.drawStars(screen)
 }
 
+// Textos do menu dimensionados para caber em ScreenWidth (240) com margem.
+const (
+	menuTitle    = "ASAS DE VALDORIA"
+	menuSubtitle = "Shoot 'em up medieval"
+	menuHelp     = "Setas/WASD  Enter confirma"
+)
+
 func (g *Game) drawMenu(screen *ebiten.Image) {
 	g.drawStarsBackground(screen)
-	drawCentered(screen, "ASAS DE VALDORIA", 60)
-	drawCentered(screen, "Um shoot 'em up medieval fantastico", 78)
+
+	// Painel só atrás do bloco título+opções; textos longos não podem
+	// ultrapassar a largura útil (causa o "texto atravessando" a moldura).
+	const margin = 12
+	drawUIPanel(screen, margin, 40, ScreenWidth-2*margin, 200)
+
+	drawCentered(screen, menuTitle, 52)
+	drawCentered(screen, menuSubtitle, 70)
 	options := []string{
 		"Iniciar jogo",
+		"Sobrevivencia",
+		"Dificuldade: " + difficultyName(currentDifficulty),
 		"Controles",
 		"Vibracao: " + shakeLevelName(g.shakeSetting),
 		"Sair",
 	}
-	g.drawOptions(screen, options, 150)
-	drawCentered(screen, "Setas/WASD move  Enter confirma", ScreenHeight-16)
-	ebitenutil.DebugPrintAt(screen, "v"+Version, 4, ScreenHeight-14)
+	g.drawOptions(screen, options, 100)
+
+	if g.highScore > 0 || g.survivalBest > 0 {
+		drawCentered(screen, "Recorde "+itoa(g.highScore)+"  Sobrev. "+itoa(g.survivalBest), 258)
+	}
+	drawCentered(screen, menuHelp, ScreenHeight-18)
+	ver := "v" + Version
+	drawText(screen, ver, ScreenWidth-textWidth(ver)-4, ScreenHeight-18, uiInkDim)
 }
 
 func (g *Game) drawControls(screen *ebiten.Image) {
 	g.drawStarsBackground(screen)
-	drawCentered(screen, "CONTROLES", 30)
+	const margin = 12
+	drawUIPanel(screen, margin, 24, ScreenWidth-2*margin, 250)
+	drawCentered(screen, "CONTROLES", 36)
 	lines := []string{
-		"Setas ou WASD: mover",
+		"Setas/WASD: mover",
 		"Shift: precisao",
 		"Espaco: disparar",
-		"X ou Ctrl: invocacao ancestral",
+		"X/Ctrl: invocacao",
 		"Escape: pausar",
 		"Enter: confirmar",
 	}
 	for i, l := range lines {
-		ebitenutil.DebugPrintAt(screen, l, 24, 60+i*18)
+		drawTextCentered(screen, l, float64(70+i*22), uiInk)
 	}
-	drawCentered(screen, "Enter/Escape para voltar", ScreenHeight-20)
+	drawCentered(screen, "Enter/Esc volta", ScreenHeight-28)
 }
 
 // reachedLabel descreve até onde o jogador avançou ao perder.
 func (g *Game) reachedLabel() string {
+	if g.mode == modeSurvival {
+		return "Sobrevivencia - " + itoa(g.elapsedTicks/60) + "s"
+	}
 	if g.boss != nil {
 		return "Chefe: Vharak"
+	}
+	if g.stageIndex < len(g.stages) {
+		return g.stages[g.stageIndex].name
 	}
 	return g.level.sectionName()
 }
 
 func (g *Game) drawGameOver(screen *ebiten.Image) {
 	g.drawStarsBackground(screen)
-	drawCentered(screen, "GAME OVER", 40)
+	const margin = 12
+	drawUIPanel(screen, margin, 28, ScreenWidth-2*margin, 230)
+	drawCentered(screen, "GAME OVER", 42)
 	stats := []string{
-		"Pontuacao: " + itoa(g.score),
+		"Pontos: " + itoa(g.score),
 		"Trecho: " + g.reachedLabel(),
-		"Inimigos derrotados: " + itoa(g.enemiesDefeated),
-		"Maior multiplicador: x" + itoa(g.maxMult),
+		"Abates: " + itoa(g.enemiesDefeated),
+		"Max combo: x" + itoa(g.maxMult),
 	}
 	for i, s := range stats {
-		ebitenutil.DebugPrintAt(screen, s, 30, 80+i*16)
+		drawTextCentered(screen, s, float64(72+i*18), uiInk)
 	}
-	g.drawOptions(screen, gameOverOptions, 170)
+	g.drawOptions(screen, gameOverOptions, 168)
 }
 
 func (g *Game) drawVictory(screen *ebiten.Image) {
 	g.drawStarsBackground(screen)
-	drawCentered(screen, "FASE CONCLUIDA!", 34)
+	const margin = 12
+	drawUIPanel(screen, margin, 22, ScreenWidth-2*margin, 240)
+	drawCentered(screen, "FASE CONCLUIDA!", 36)
 	stats := []string{
-		"Pontuacao final: " + itoa(g.score),
-		"Bonus por vidas: " + itoa(g.victoryLifeBonus),
-		"Bonus por bombas: " + itoa(g.victoryBombBonus),
+		"Pontos: " + itoa(g.score),
+		"Bonus vidas: " + itoa(g.victoryLifeBonus),
+		"Bonus bombas: " + itoa(g.victoryBombBonus),
 		"Tempo: " + itoa(g.victoryTime) + "s",
-		"Inimigos derrotados: " + itoa(g.enemiesDefeated),
+		"Abates: " + itoa(g.enemiesDefeated),
 	}
 	for i, s := range stats {
-		ebitenutil.DebugPrintAt(screen, s, 30, 70+i*16)
+		drawTextCentered(screen, s, float64(62+i*18), uiInk)
 	}
-	g.drawOptions(screen, victoryOptions, 180)
+	g.drawOptions(screen, victoryOptions, 172)
 }
 
 func (g *Game) drawOptions(screen *ebiten.Image, options []string, y int) {
 	for i, opt := range options {
+		col := uiInk
 		text := "  " + opt
 		if i == g.menuIndex {
+			col = uiHighlight
 			text = "> " + opt
 		}
-		ebitenutil.DebugPrintAt(screen, text, ScreenWidth/2-len(text)*3, y+i*16)
+		drawTextCentered(screen, text, float64(y+i*16), col)
 	}
 }
 
@@ -1141,7 +1403,50 @@ func (g *Game) drawFade(screen *ebiten.Image) {
 }
 
 func drawCentered(screen *ebiten.Image, text string, y int) {
-	ebitenutil.DebugPrintAt(screen, text, ScreenWidth/2-len(text)*3, y)
+	drawTextCentered(screen, text, float64(y), uiInk)
+}
+
+// label desenha um texto do HUD numa placa leve, com padding confortável.
+func label(screen *ebiten.Image, text string, x, y int) {
+	labelBlock(screen, []string{text}, x, y)
+}
+
+// labelBlock agrupa várias linhas numa única placa (menos caixinhas soltas).
+func labelBlock(screen *ebiten.Image, lines []string, x, y int) {
+	if len(lines) == 0 {
+		return
+	}
+	const padX, padY, lineH = 5, 3, 12
+	maxW := 0.0
+	for _, s := range lines {
+		if w := textWidth(s); w > maxW {
+			maxW = w
+		}
+	}
+	w := float32(maxW) + padX*2
+	h := float32(len(lines)*lineH + padY*2 - 2)
+	drawUIChip(screen, float32(x-padX), float32(y-padY), w, h)
+	for i, s := range lines {
+		drawText(screen, s, float64(x), float64(y+i*lineH), uiInk)
+	}
+}
+
+// labelRight alinha o texto de modo que sua borda direita fique em rightX.
+func labelRight(screen *ebiten.Image, text string, rightX, y int) {
+	label(screen, text, rightX-int(textWidth(text)), y)
+}
+
+func labelBlockRight(screen *ebiten.Image, lines []string, rightX, y int) {
+	if len(lines) == 0 {
+		return
+	}
+	maxW := 0.0
+	for _, s := range lines {
+		if w := textWidth(s); w > maxW {
+			maxW = w
+		}
+	}
+	labelBlock(screen, lines, rightX-int(maxW), y)
 }
 
 func (g *Game) drawBossHUD(screen *ebiten.Image) {
@@ -1154,20 +1459,16 @@ func (g *Game) drawBossHUD(screen *ebiten.Image) {
 		if (b.tick/16)%2 == 0 {
 			drawCentered(screen, "! ALERTA !", ScreenHeight/2-14)
 		}
-		ebitenutil.DebugPrintAt(screen, "VHARAK, O DRAGAO CORROMPIDO", ScreenWidth/2-81, ScreenHeight/2)
+		drawTextCentered(screen, "VHARAK, O DRAGAO CORROMPIDO", ScreenHeight/2, uiHighlight)
 		return
 	}
 
-	const barY = 12
-	const margin = 10
-	const barH = 6
+	// Barra fina no topo absoluto, para não colidir com o placar logo abaixo.
+	const barY = 2
+	const margin = 6
+	const barH = 5
 	width := float32(ScreenWidth - 2*margin)
 
-	// Moldura + trilho escuro.
-	vector.DrawFilledRect(screen, margin-1, barY-1, width+2, barH+2, color.RGBA{0x10, 0x08, 0x08, 0xff}, false)
-	vector.DrawFilledRect(screen, margin, barY, width, barH, color.RGBA{0x30, 0x10, 0x10, 0xff}, false)
-
-	// Preenchimento colorido pela fase atual (vermelho → laranja → vermelho vivo).
 	fill := color.RGBA{0xc0, 0x30, 0x30, 0xff}
 	switch b.phase {
 	case bossPhase2:
@@ -1175,7 +1476,7 @@ func (g *Game) drawBossHUD(screen *ebiten.Image) {
 	case bossPhase3:
 		fill = color.RGBA{0xff, 0x40, 0x40, 0xff}
 	}
-	vector.DrawFilledRect(screen, margin, barY, width*float32(b.healthRatio()), barH, fill, false)
+	drawIronBar(screen, margin, barY, width, barH, fill, b.healthRatio())
 
 	// Marcas nos limiares de troca de fase (65% e 30%), para o jogador antecipar.
 	tick := color.RGBA{0x20, 0x10, 0x10, 0xff}
@@ -1183,10 +1484,9 @@ func (g *Game) drawBossHUD(screen *ebiten.Image) {
 		x := float32(margin) + width*float32(r)
 		vector.DrawFilledRect(screen, x, barY, 1, barH, tick, false)
 	}
-	ebitenutil.DebugPrintAt(screen, "VHARAK", margin, 0)
 
 	if b.action == actionWarning {
-		ebitenutil.DebugPrintAt(screen, "!", int(b.centerX())-2, int(b.y+b.h)+4)
+		drawText(screen, "!", b.centerX()-2, b.y+b.h+4, uiHighlight)
 	}
 }
 
@@ -1202,40 +1502,74 @@ func (g *Game) drawBombEffect(screen *ebiten.Image) {
 }
 
 func (g *Game) drawHUD(screen *ebiten.Image) {
-	ebitenutil.DebugPrintAt(screen, "SCORE "+itoa(g.score), 4, 4)
-	ebitenutil.DebugPrintAt(screen, "HIGH "+itoa(g.highScore), 4, 16)
+	best := g.highScore
+	if g.mode == modeSurvival {
+		best = g.survivalBest
+	} else {
+		g.drawProgressBar(screen)
+	}
+
+	// Placar: uma placa só (score + recorde + combo).
+	topLeft := []string{
+		"SCORE " + itoa(g.score),
+		"HIGH " + itoa(best),
+	}
 	if g.multiplier() > 1 {
-		ebitenutil.DebugPrintAt(screen, "x"+itoa(g.multiplier()), 4, 28)
+		topLeft = append(topLeft, "x"+itoa(g.multiplier()))
 	}
-
-	g.drawHealthBar(screen)
-	ebitenutil.DebugPrintAt(screen, "VIDAS "+itoa(g.lives), 4, ScreenHeight-28)
-	ebitenutil.DebugPrintAt(screen, "BOMBA "+itoa(g.bombCharges), 4, ScreenHeight-16)
-
-	weapon := weaponName(g.player.weapon) + " Nv" + itoa(g.player.weaponLevel)
-	ebitenutil.DebugPrintAt(screen, weapon, ScreenWidth-len(weapon)*6-4, ScreenHeight-16)
-	if g.player.hasShield() {
-		ebitenutil.DebugPrintAt(screen, "ESCUDO", ScreenWidth-46, ScreenHeight-28)
-	}
-
-	// Barra de progresso discreta na borda superior.
-	barWidth := float32(g.level.progress() * ScreenWidth)
-	vector.DrawFilledRect(screen, 0, 0, ScreenWidth, 2, color.RGBA{0x22, 0x22, 0x33, 0xff}, false)
-	vector.DrawFilledRect(screen, 0, 0, barWidth, 2, color.RGBA{0xd0, 0xc0, 0x50, 0xff}, false)
+	labelBlock(screen, topLeft, 6, 10)
 
 	name := g.level.sectionName()
-	ebitenutil.DebugPrintAt(screen, name, ScreenWidth-len(name)*6-4, 4)
+	if g.mode == modeSurvival {
+		name = "SOBREV " + itoa(g.elapsedTicks/60) + "s"
+	}
+	labelRight(screen, name, ScreenWidth-6, 10)
+
+	g.drawHealthBar(screen)
+	labelBlock(screen, []string{
+		"VIDAS " + itoa(g.lives),
+		"BOMBA " + itoa(g.bombCharges),
+	}, 6, ScreenHeight-28)
+
+	bottomRight := []string{}
+	if g.player.hasShield() {
+		bottomRight = append(bottomRight, "ESCUDO")
+	}
+	bottomRight = append(bottomRight, weaponName(g.player.weapon)+" Nv"+itoa(g.player.weaponLevel))
+	labelBlockRight(screen, bottomRight, ScreenWidth-6, ScreenHeight-16-12*(len(bottomRight)-1))
 }
 
-// drawHealthBar mostra os pontos de vida como pequenos blocos.
-func (g *Game) drawHealthBar(screen *ebiten.Image) {
-	const pip = 8
-	for i := 0; i < maxHealth; i++ {
-		c := color.RGBA{0x40, 0x20, 0x20, 0xff}
-		if i < g.player.health {
-			c = color.RGBA{0xe0, 0x50, 0x50, 0xff}
+// drawProgressBar desenha a barra de avanço da fase e marca o início de cada
+// trecho, para o jogador perceber quanto falta e quando muda o cenário.
+func (g *Game) drawProgressBar(screen *ebiten.Image) {
+	const barH = 4
+	drawIronBar(screen, 0, 0, ScreenWidth, barH, color.RGBA{0xd0, 0xc0, 0x50, 0xff}, g.level.progress())
+
+	if g.level.duration <= 0 {
+		return
+	}
+	for i, s := range g.level.sections {
+		if i == 0 {
+			continue
 		}
-		vector.DrawFilledRect(screen, float32(60+i*(pip+2)), 4, pip, pip, c, false)
+		x := float32(float64(s.startTick) / float64(g.level.duration) * ScreenWidth)
+		vector.DrawFilledRect(screen, x, 0, 1, barH, color.RGBA{0x10, 0x10, 0x18, 0xff}, false)
+	}
+}
+
+// drawHealthBar mostra os pontos de vida como pequenos blocos, no rodapé à
+// esquerda (acima de VIDAS), sem colidir com o placar do topo.
+func (g *Game) drawHealthBar(screen *ebiten.Image) {
+	const pip = 7
+	y := float32(ScreenHeight - 44)
+	for i := 0; i < maxHealth; i++ {
+		c := color.RGBA{0x3a, 0x18, 0x20, 0xc0}
+		if i < g.player.health {
+			c = color.RGBA{0xe8, 0x48, 0x48, 0xff}
+		}
+		x := float32(6 + i*(pip+3))
+		vector.DrawFilledRect(screen, x, y, pip, pip, c, false)
+		vector.StrokeRect(screen, x, y, pip, pip, 1, withAlpha(uiChipEdge, 160), false)
 	}
 }
 

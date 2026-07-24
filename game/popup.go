@@ -14,10 +14,20 @@ type scorePopup struct {
 }
 
 func (g *Game) spawnScorePopup(x, y float64, points int) {
+	g.spawnTextPopup(x, y, itoa(points))
+}
+
+// spawnBonusPopup destaca recompensas ocultas (formação, trecho sem dano) com
+// um "+" para diferenciá-las das pontuações normais de eliminação.
+func (g *Game) spawnBonusPopup(x, y float64, points int) {
+	g.spawnTextPopup(x, y, "+"+itoa(points))
+}
+
+func (g *Game) spawnTextPopup(x, y float64, text string) {
 	if len(g.popups) >= maxPopups {
 		return
 	}
-	g.popups = append(g.popups, &scorePopup{x: x, y: y, text: itoa(points), life: popupLife})
+	g.popups = append(g.popups, &scorePopup{x: x, y: y, text: text, life: popupLife})
 }
 
 func (g *Game) updatePopups() {

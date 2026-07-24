@@ -99,6 +99,12 @@ type Boss struct {
 	justEntered  bool
 	phaseChanged bool
 	justDied     bool
+
+	slow     int
+	slowSkip float64
+	burn     int
+	burnTick int
+	stun     int
 }
 
 func newBoss() *Boss {
@@ -137,6 +143,9 @@ func (b *Boss) takeDamage(n int) {
 	if b.invulnerable {
 		return
 	}
+	if b.burn > 0 && burnBonusPct > 0 {
+		n += n * burnBonusPct / 100
+	}
 	b.health -= n
 	b.hitFlash = hitFlashDuration
 	if b.health <= 0 {
@@ -157,6 +166,7 @@ func (b *Boss) update(ctx *bossContext) {
 	if b.hitFlash > 0 {
 		b.hitFlash--
 	}
+	b.tickStatusEffects()
 
 	switch b.phase {
 	case bossEntering:
@@ -174,7 +184,18 @@ func (b *Boss) update(ctx *bossContext) {
 		return
 	}
 
+	if b.stun > 0 {
+		return
+	}
+
 	b.refreshPhase()
+	if b.slow > 0 {
+		b.slowSkip += iceSlowFactor
+		if b.slowSkip < 1 {
+			return
+		}
+		b.slowSkip--
+	}
 	b.move()
 	b.runActions(ctx)
 }
@@ -356,15 +377,27 @@ func (b *Boss) draw(screen *ebiten.Image) {
 	if b.phase == bossDead {
 		return
 	}
+	b.drawStatusAura(screen)
+	flash := b.hitFlash > 0 || (b.phase == bossDying && (b.tick/4)%2 == 0)
+	phase := float64(b.tick) * bossWingSpeed
+	bob := math.Sin(phase) * 1.5
+	x, y := float32(b.x), float32(b.y)
+	name := wingFrameName("boss", phase)
+
+	if sw, sh, ok := spriteBounds("boss"); ok {
+		scale := math.Max(b.w/float64(sw), b.h/float64(sh)) * 1.15
+		drawSprite(screen, name, b.centerX(), b.y+b.h/2+bob, scale, false, 0, flash)
+		b.drawCrystals(screen, x, y)
+		return
+	}
+
+	// Fallback geométrico.
 	body := color.RGBA{0x8a, 0x2a, 0x2a, 0xff}
-	if b.hitFlash > 0 {
+	if flash {
 		body = color.RGBA{0xff, 0xff, 0xff, 0xff}
 	}
-	if b.phase == bossDying && (b.tick/4)%2 == 0 {
-		body = color.RGBA{0xff, 0xf0, 0xa0, 0xff}
-	}
-	x, y := float32(b.x), float32(b.y)
 	w, h := float32(b.w), float32(b.h)
+	vector.DrawFilledRect(screen, x-1, y-1, w+2, h+2, enemyOutline, false)
 	vector.DrawFilledRect(screen, x, y, w, h, body, false)
 
 	wing := color.RGBA{0x5a, 0x18, 0x18, 0xff}
@@ -372,15 +405,18 @@ func (b *Boss) draw(screen *ebiten.Image) {
 	vector.DrawFilledRect(screen, x-12, y+2-flap, 12, h-6, wing, false)
 	vector.DrawFilledRect(screen, x+w, y+2-flap, 12, h-6, wing, false)
 	vector.DrawFilledRect(screen, x+w/2-6, y+h, 12, 6, wing, false)
-	// Chifres e olhos brilhantes reforçam a leitura da cabeça do dragão.
 	eye := color.RGBA{0xff, 0xd0, 0x40, 0xff}
 	vector.DrawFilledRect(screen, x+w/2-10, y+6, 3, 3, eye, false)
 	vector.DrawFilledRect(screen, x+w/2+7, y+6, 3, 3, eye, false)
+	b.drawCrystals(screen, x, y)
+}
 
-	if b.crystalsActive && b.phase != bossDying {
-		crystal := color.RGBA{0x8a, 0xf0, 0xff, 0xff}
-		for _, s := range bossWeakSpots {
-			vector.DrawFilledRect(screen, x+float32(s.dx), y+float32(s.dy), float32(s.size), float32(s.size), crystal, false)
-		}
+func (b *Boss) drawCrystals(screen *ebiten.Image, x, y float32) {
+	if !b.crystalsActive || b.phase == bossDying {
+		return
+	}
+	crystal := color.RGBA{0x8a, 0xf0, 0xff, 0xff}
+	for _, s := range bossWeakSpots {
+		vector.DrawFilledRect(screen, x+float32(s.dx), y+float32(s.dy), float32(s.size), float32(s.size), crystal, false)
 	}
 }

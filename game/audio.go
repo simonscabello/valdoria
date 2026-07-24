@@ -41,6 +41,8 @@ type soundID int
 
 const (
 	sfxShoot soundID = iota
+	sfxShootFlame
+	sfxShootIce
 	sfxEnemyDown
 	sfxPlayerHit
 	sfxPickup
@@ -141,6 +143,8 @@ func audioAvailable() bool {
 // em assets/audio quando presentes e caindo para sons gerados caso contrário.
 func (a *AudioManager) buildLibrary() {
 	a.sfx[sfxShoot] = a.loadSFX("shoot", genShoot)
+	a.sfx[sfxShootFlame] = a.loadSFX("shoot_flame", genShootFlame)
+	a.sfx[sfxShootIce] = a.loadSFX("shoot_ice", genShootIce)
 	a.sfx[sfxEnemyDown] = a.loadSFX("enemy_down", genEnemyDown)
 	a.sfx[sfxPlayerHit] = a.loadSFX("player_hit", genPlayerHit)
 	a.sfx[sfxPickup] = a.loadSFX("pickup", genPickup)
@@ -434,6 +438,18 @@ func mix(a, b []float64) []float64 {
 
 func genShoot(sr int) []float64 {
 	return synth(sr, 900, 480, 0.08, 0.35, waveSquare, 0.02, 0.6)
+}
+
+// genShootFlame: "whoosh" mais grave e ruidoso para as Chamas do Dragão.
+func genShootFlame(sr int) []float64 {
+	body := synth(sr, 520, 240, 0.10, 0.30, waveSquare, 0.02, 0.7)
+	noise := synth(sr, 0, 0, 0.08, 0.12, waveNoise, 0.01, 0.7)
+	return mix(body, noise)
+}
+
+// genShootIce: tom cristalino agudo e curto para as Lanças de Gelo.
+func genShootIce(sr int) []float64 {
+	return synth(sr, 1400, 1000, 0.07, 0.28, waveSine, 0.01, 0.6)
 }
 
 func genEnemyDown(sr int) []float64 {

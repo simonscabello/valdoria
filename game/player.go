@@ -142,10 +142,13 @@ func (p *Player) applyPowerup(kind powerupType) {
 	}
 }
 
+// gainWeapon aplica uma runa de arma. Trocar de arma nunca rebaixa o poder: o
+// nível atual é preservado ao trocar (o nível funciona como uma potência
+// compartilhada), e coletar a runa da arma já equipada sobe um nível até o
+// máximo. Assim, todo power-up é desejável — nunca uma armadilha a ser evitada.
 func (p *Player) gainWeapon(w weaponType) {
 	if p.weapon != w {
 		p.weapon = w
-		p.weaponLevel = 1
 		return
 	}
 	if p.weaponLevel < maxWeaponLevel {
@@ -219,6 +222,15 @@ func (p *Player) draw(screen *ebiten.Image) {
 // drawGriffin desenha a silhueta do grifo com o cavaleiro montado, asas em
 // batida e leve inclinação ao mover para os lados.
 func (p *Player) drawGriffin(screen *ebiten.Image) {
+	// Sprite do grifo/cavaleiro: batida de asa (2 frames), inclinação e bob.
+	rot := p.tilt * 0.035
+	bob := math.Sin(p.wingPhase) * 0.6
+	name := wingFrameName("player", p.wingPhase)
+	if drawSprite(screen, name, p.centerX(), p.centerY()+bob, 1, false, rot, false) {
+		return
+	}
+
+	// Fallback geométrico.
 	cx := float32(p.centerX())
 	top := float32(p.y)
 	flap := float32(math.Sin(p.wingPhase) * 3)
@@ -228,6 +240,8 @@ func (p *Player) drawGriffin(screen *ebiten.Image) {
 	vector.DrawFilledRect(screen, cx-2-wingW, top+4-flap-tilt, wingW, wingH, griffinWing, false)
 	vector.DrawFilledRect(screen, cx+2, top+4-flap+tilt, wingW, wingH, griffinWing, false)
 
+	// Contorno escuro atrás do corpo, para o grifo destacar-se do cenário.
+	vector.DrawFilledRect(screen, cx-4, top+1, 8, playerSize-3, enemyOutline, false)
 	vector.DrawFilledRect(screen, cx-3, top+2, 6, playerSize-5, griffinBody, false)
 	vector.DrawFilledRect(screen, cx-1, top+playerSize-3, 2, 4, griffinWing, false)
 	vector.DrawFilledRect(screen, cx-2, top, 4, 3, griffinBody, false)

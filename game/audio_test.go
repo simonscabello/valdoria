@@ -5,9 +5,11 @@ import (
 	"testing"
 )
 
-// TestMain desliga o áudio para os testes não abrirem dispositivo de som.
+// TestMain desliga o áudio (para não abrir dispositivo de som) e a persistência
+// (para os testes não criarem/alterarem o save real do usuário).
 func TestMain(m *testing.M) {
 	audioEnabled = false
+	saveEnabled = false
 	os.Exit(m.Run())
 }
 

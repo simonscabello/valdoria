@@ -38,8 +38,10 @@ Atalhos de desenvolvimento (somente com `VALDORIA_DEV=1`): `F1` HUD, `F2` hitbox
 
 ## 1. Menu inicial
 
-- [ ] O título "Asas de Valdoria" e a descrição aparecem.
-- [ ] Navegação para cima/baixo circula entre as opções (Iniciar, Controles, Vibração, Sair).
+- [ ] O título "Asas de Valdoria" e a descrição aparecem, em **fonte própria** (não a fonte de debug).
+- [ ] Navegação circula entre as opções (Iniciar, Sobrevivência, Dificuldade, Controles, Vibração, Sair); a opção selecionada fica destacada em dourado.
+- [ ] "Dificuldade" alterna Fácil/Normal/Difícil e é lembrada ao reabrir o jogo.
+- [ ] Os recordes de campanha e sobrevivência aparecem no menu e persistem após fechar/reabrir.
 - [ ] "Iniciar" começa a partida com transição de fade.
 - [ ] "Controles" abre a tela de controles e retorna ao menu com Esc/Enter.
 - [ ] A opção de vibração alterna entre Completa/Reduzida/Desligada.
@@ -56,13 +58,22 @@ Atalhos de desenvolvimento (somente com `VALDORIA_DEV=1`): `F1` HUD, `F2` hitbox
 - [ ] Espaço dispara de forma contínua, com intervalo consistente e dois projéteis.
 - [ ] Trecho 1 (Campos) é acessível: apenas corvos, bem espaçados.
 - [ ] Aparece a Runa de Fogo logo no início e troca a arma ao coletar.
-- [ ] Coletar a mesma runa aumenta o nível (até 3); runa diferente reinicia no nível 1.
+- [ ] Coletar a mesma runa aumenta o nível (até 3); runa diferente troca a arma **mantendo o nível** (trocar nunca rebaixa o poder — dá vontade de pegar qualquer runa).
 - [ ] Cura recupera HP até o máximo; Escudo absorve um único acerto.
 - [ ] O HUD mostra arma atual, nível, vidas, cargas de bomba e escudo.
 - [ ] A dificuldade sobe por trecho: Vila (harpias com tiro), Muralhas (gárgulas), Castelo (wyverns).
 - [ ] Avisos de trecho aparecem ("A vila esta sob ataque!", etc.) e a barra de progresso avança.
 - [ ] Colisões: projétil destrói inimigo; encostar em inimigo causa dano.
+- [ ] Se um inimigo atravessar a base da tela sem ser abatido, o jogador perde uma vida (saída lateral da gárgula não conta).
 - [ ] Projéteis inimigos (magenta/roxo) são claramente distinguíveis dos disparos do jogador, inclusive das chamas laranjas.
+- [ ] Inimigos que atiram (harpia, gárgula, wyvern) piscam um contorno de alerta **antes** de disparar.
+- [ ] O ritmo é contínuo: quase sempre há inimigos na tela, sem longas esperas.
+- [ ] Os inimigos e o jogador se **destacam do cenário** (fundo escurecido + contorno escuro nas silhuetas).
+- [ ] Nenhum texto do HUD se sobrepõe: placar (topo-esq.), trecho (topo-dir.), vida/vidas/bomba (rodapé-esq.), arma/escudo (rodapé-dir.); barra do chefe fina no topo não invade o placar.
+- [ ] O HUD é legível mesmo sobre o cenário claro da vila em chamas (painel escuro atrás dos textos).
+- [ ] A barra de progresso do topo mostra marcos dos quatro trechos.
+- [ ] Bônus de formação ("+60") e de trecho sem dano ("+200") aparecem como popups.
+- [ ] Disparar as Chamas gera brasas no bocal; usar a bomba escurece a tela por um instante.
 - [ ] Ao abater um inimigo aparece o número de pontos ganhos subindo (já com o multiplicador).
 - [ ] Abater um wyvern (inimigo grande) produz um breve "impacto" (hit-stop) com as partículas seguindo animadas.
 - [ ] O escudo, ao absorver um golpe, emite som e anel de partículas (e o combo **não** zera).
@@ -79,6 +90,15 @@ Atalhos de desenvolvimento (somente com `VALDORIA_DEV=1`): `F1` HUD, `F2` hitbox
 - [ ] Esc pausa e retoma; a lógica congela e o tempo/linha do tempo não avança.
 - [ ] "PAUSADO" é exibido.
 - [ ] Fechar a janela continua funcionando durante a pausa.
+
+## 3b. Campanha, dificuldades e sobrevivência
+
+- [ ] A campanha encadeia três fases (O Cerco de Eldoria → A Floresta Corrompida → O Covil de Vharak) com biomas distintos e aviso "Nova regiao" na transição.
+- [ ] A **Balista** (terrestre) aparece na fase 3 e dispara rajadas miradas telegrafadas.
+- [ ] O **Feiticeiro** aparece na fase 2 e solta anéis completos de projéteis.
+- [ ] Só a última fase invoca o chefe; as anteriores encadeiam direto.
+- [ ] Cada dificuldade muda vidas/bombas iniciais, a resistência dos inimigos e a previsibilidade dos spawns (Fácil fixo; Normal/Difícil com X e ritmo variando).
+- [ ] **Sobrevivência**: ondas infinitas com dificuldade crescente; ao morrer, o recorde de sobrevivência é salvo; nunca entra em chefe.
 
 ## 4. Chefe (Vharak)
 

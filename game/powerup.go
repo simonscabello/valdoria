@@ -2,6 +2,7 @@ package game
 
 import (
 	"image/color"
+	"math"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
@@ -18,9 +19,10 @@ const (
 )
 
 type Powerup struct {
-	kind powerupType
-	x, y float64
-	dead bool
+	kind     powerupType
+	x, y     float64
+	dead     bool
+	animTick int
 }
 
 func newPowerup(kind powerupType, centerX, centerY float64) *Powerup {
@@ -29,11 +31,15 @@ func newPowerup(kind powerupType, centerX, centerY float64) *Powerup {
 
 func (p *Powerup) update() {
 	p.y += powerupSpeed
+	p.animTick++
 }
 
 func (p *Powerup) offScreen() bool {
 	return p.y > ScreenHeight
 }
+
+func (p *Powerup) centerX() float64 { return p.x + powerupSize/2 }
+func (p *Powerup) centerY() float64 { return p.y + powerupSize/2 }
 
 func (p *Powerup) color() color.RGBA {
 	switch p.kind {
@@ -50,8 +56,31 @@ func (p *Powerup) color() color.RGBA {
 	}
 }
 
+func powerupSpriteName(k powerupType) string {
+	switch k {
+	case powerFire:
+		return "power_fire"
+	case powerIce:
+		return "power_ice"
+	case powerHeal:
+		return "power_heal"
+	case powerShield:
+		return "power_shield"
+	default:
+		return "power_light"
+	}
+}
+
 func (p *Powerup) draw(screen *ebiten.Image) {
-	vector.DrawFilledRect(screen, float32(p.x), float32(p.y), powerupSize, powerupSize, p.color(), false)
-	// Núcleo escuro para diferenciar do restante das formas.
-	vector.DrawFilledRect(screen, float32(p.x+3), float32(p.y+3), powerupSize-6, powerupSize-6, color.RGBA{0x10, 0x10, 0x18, 0xff}, false)
+	name := powerupSpriteName(p.kind)
+	bob := math.Sin(float64(p.animTick)*0.2) * 1.2
+	if sw, sh, ok := spriteBounds(name); ok {
+		scale := math.Max(powerupSize/float64(sw), powerupSize/float64(sh)) * 1.25
+		drawSprite(screen, name, p.centerX(), p.centerY()+bob, scale, false, 0, false)
+		return
+	}
+
+	// Fallback geométrico.
+	vector.DrawFilledRect(screen, float32(p.x), float32(p.y+bob), powerupSize, powerupSize, p.color(), false)
+	vector.DrawFilledRect(screen, float32(p.x+3), float32(p.y+3+bob), powerupSize-6, powerupSize-6, color.RGBA{0x10, 0x10, 0x18, 0xff}, false)
 }

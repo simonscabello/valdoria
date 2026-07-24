@@ -37,10 +37,11 @@ func (b *EnemyBullet) offScreen() bool {
 }
 
 func (b *EnemyBullet) draw(screen *ebiten.Image) {
-	// Halo escuro (contorno) + corpo magenta + núcleo claro: destaca o projétil
-	// sobre qualquer fundo e o diferencia dos disparos do jogador.
+	// Glow magenta + contorno escuro + núcleo claro: leitura imediata de ameaça.
 	x, y := float32(b.x), float32(b.y)
-	vector.DrawFilledRect(screen, x-1, y-1, enemyBulletSize+2, enemyBulletSize+2, enemyBulletOutline, false)
-	vector.DrawFilledRect(screen, x, y, enemyBulletSize, enemyBulletSize, enemyBulletColor, false)
-	vector.DrawFilledRect(screen, x+1, y+1, enemyBulletSize-2, enemyBulletSize-2, enemyBulletCore, false)
+	s := float32(enemyBulletSize)
+	drawBulletGlow(screen, x, y, s, s, enemyBulletColor)
+	vector.DrawFilledRect(screen, x-1, y-1, s+2, s+2, enemyBulletOutline, false)
+	vector.DrawFilledRect(screen, x, y, s, s, enemyBulletColor, false)
+	vector.DrawFilledRect(screen, x+1, y+1, s-2, s-2, enemyBulletCore, false)
 }
