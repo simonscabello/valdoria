@@ -37,6 +37,8 @@ type Enemy struct {
 	damage   int
 	dead     bool
 	hitFlash int
+	hasDrop  bool
+	drop     powerupType
 	color    color.RGBA
 	accent   color.RGBA
 	behavior enemyBehavior

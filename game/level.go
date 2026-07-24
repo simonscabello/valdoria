@@ -19,6 +19,8 @@ type waveEvent struct {
 	formation formation
 	spawnX    float64
 	fromLeft  bool
+	hasDrop   bool
+	drop      powerupType
 
 	started       bool
 	spawned       int
@@ -105,18 +107,28 @@ func newLevel() *Level {
 			interval: interval, formation: f, spawnX: x, fromLeft: fromLeft,
 		})
 	}
+	// drop marca o último evento adicionado como portador de um power-up garantido.
+	drop := func(kind powerupType) {
+		ev := l.events[len(l.events)-1]
+		ev.hasDrop = true
+		ev.drop = kind
+	}
 
 	// Trecho 1 - Campos do reino: formações de corvos, baixa dificuldade.
 	add(120, kindCrow, 1, 0, formationLine, 40, false)
 	add(600, kindCrow, 1, 0, formationV, 120, false)
+	drop(powerFire)
 	add(1200, kindCrow, 2, 90, formationLine, 80, false)
+	drop(powerShield)
 	add(2000, kindCrow, 1, 0, formationV, 160, false)
 	add(2600, kindCrow, 2, 80, formationLine, 30, false)
 	add(3200, kindCrow, 1, 0, formationV, 100, false)
 
 	// Trecho 2 - Vila atacada: harpias em zigue-zague misturadas a corvos.
 	add(3800, kindHarpy, 3, 70, formationSingle, 40, false)
+	drop(powerIce)
 	add(4200, kindCrow, 2, 80, formationLine, 120, false)
+	drop(powerHeal)
 	add(4800, kindHarpy, 2, 90, formationSingle, 180, false)
 	add(5400, kindCrow, 1, 0, formationV, 90, false)
 	add(5800, kindHarpy, 3, 80, formationSingle, 60, false)
@@ -124,15 +136,18 @@ func newLevel() *Level {
 
 	// Trecho 3 - Muralhas: gárgulas pelas laterais protegidas por harpias.
 	add(7400, kindGargoyle, 1, 0, formationSingle, 60, true)
+	drop(powerLight)
 	add(7500, kindHarpy, 2, 80, formationSingle, 40, false)
 	add(8200, kindGargoyle, 1, 0, formationSingle, 170, false)
 	add(8300, kindHarpy, 2, 80, formationSingle, 150, false)
 	add(9000, kindGargoyle, 1, 0, formationSingle, 100, true)
+	drop(powerHeal)
 	add(9100, kindHarpy, 3, 70, formationSingle, 90, false)
 	add(9800, kindGargoyle, 1, 0, formationSingle, 130, false)
 
 	// Trecho 4 - Aproximação do castelo: wyverns e formações combinadas.
 	add(11000, kindWyvern, 1, 0, formationSingle, 60, false)
+	drop(powerShield)
 	add(11400, kindHarpy, 3, 70, formationSingle, 120, false)
 	add(11800, kindWyvern, 1, 0, formationSingle, 160, false)
 	add(12200, kindCrow, 2, 80, formationLine, 40, false)
@@ -168,7 +183,12 @@ func (l *Level) update() []*Enemy {
 			ev.nextSpawnTick = l.tick
 		}
 		if l.tick >= ev.nextSpawnTick && ev.spawned < ev.count {
-			spawned = append(spawned, ev.spawn()...)
+			newEnemies := ev.spawn()
+			if ev.hasDrop && ev.spawned == 0 && len(newEnemies) > 0 {
+				newEnemies[0].hasDrop = true
+				newEnemies[0].drop = ev.drop
+			}
+			spawned = append(spawned, newEnemies...)
 			ev.spawned++
 			ev.nextSpawnTick = l.tick + ev.interval
 		}

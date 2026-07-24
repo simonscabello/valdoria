@@ -3,13 +3,13 @@ package game
 // Configurações centrais de jogabilidade. Ajuste aqui para calibrar o controle.
 const (
 	initialHealth = 3
+	maxHealth     = 5
 
 	playerSize           = 16
 	playerHitboxSize     = 4
 	playerSpeed          = 2.5
 	playerPrecisionSpeed = 1.0
 
-	shootCooldown       = 10
 	bulletInset         = 3
 	muzzleFlashDuration = 4
 
@@ -68,7 +68,36 @@ const (
 	formationGapY      = 16
 
 	// Ajustes de desenvolvimento/teste.
+	devMode          = true
 	devStartSection  = 0 // inicia a fase neste trecho (0 a 3)
 	devTimeScale     = 1 // passos de linha do tempo por frame
 	devFastTimeScale = 6 // valor aplicado ao acelerar com Tab
+)
+
+// Configurações de armas e power-ups.
+const (
+	maxWeaponLevel = 3
+
+	lightBulletSpeed     = 5.0
+	lightBulletSpeedFast = 6.5
+	lightBulletDamage    = 2
+	lightCooldown        = 10
+
+	flameSpread       = 0.9 // abertura do leque em radianos
+	flameBulletSpeed  = 4.0
+	flameBulletDamage = 1
+	flameCooldown     = 12
+	flameCooldownFast = 7
+
+	iceBulletSpeed  = 3.0
+	iceBulletDamage = 4
+	iceCooldown     = 20
+	icePierce       = 1
+	icePierceMax    = 3
+
+	powerupSize  = 10
+	powerupSpeed = 1.0
+
+	dropChance     = 0.18
+	shieldDuration = 480 // ~8s a 60 TPS
 )

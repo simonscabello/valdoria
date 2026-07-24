@@ -14,13 +14,18 @@ type Player struct {
 	invincible  int
 	muzzleFlash int
 	precision   bool
+	weapon      weaponType
+	weaponLevel int
+	shieldTimer int
 }
 
 func newPlayer() *Player {
 	return &Player{
-		x:      ScreenWidth/2 - playerSize/2,
-		y:      ScreenHeight - playerSize*3,
-		health: initialHealth,
+		x:           ScreenWidth/2 - playerSize/2,
+		y:           ScreenHeight - playerSize*3,
+		health:      initialHealth,
+		weapon:      weaponLight,
+		weaponLevel: 1,
 	}
 }
 
@@ -66,6 +71,9 @@ func (p *Player) update() {
 	if p.muzzleFlash > 0 {
 		p.muzzleFlash--
 	}
+	if p.shieldTimer > 0 {
+		p.shieldTimer--
+	}
 }
 
 func (p *Player) clampToScreen() {
@@ -87,11 +95,41 @@ func (p *Player) tryShoot() []*Bullet {
 	if !ebiten.IsKeyPressed(ebiten.KeySpace) || p.cooldown > 0 {
 		return nil
 	}
-	p.cooldown = shootCooldown
+	p.cooldown = weaponCooldown(p.weapon, p.weaponLevel)
 	p.muzzleFlash = muzzleFlashDuration
-	return []*Bullet{
-		newBullet(p.x+bulletInset, p.y),
-		newBullet(p.x+playerSize-bulletInset-bulletWidth, p.y),
+	return fireWeapon(p.weapon, p.weaponLevel, p.centerX(), p.y)
+}
+
+func (p *Player) hasShield() bool {
+	return p.shieldTimer > 0
+}
+
+// applyPowerup coleta uma runa/benefício respeitando as regras de armas.
+func (p *Player) applyPowerup(kind powerupType) {
+	switch kind {
+	case powerLight:
+		p.gainWeapon(weaponLight)
+	case powerFire:
+		p.gainWeapon(weaponFlame)
+	case powerIce:
+		p.gainWeapon(weaponIce)
+	case powerHeal:
+		if p.health < maxHealth {
+			p.health++
+		}
+	case powerShield:
+		p.shieldTimer = shieldDuration
+	}
+}
+
+func (p *Player) gainWeapon(w weaponType) {
+	if p.weapon != w {
+		p.weapon = w
+		p.weaponLevel = 1
+		return
+	}
+	if p.weaponLevel < maxWeaponLevel {
+		p.weaponLevel++
 	}
 }
 
@@ -106,8 +144,12 @@ func (p *Player) canBeHit() bool {
 }
 
 func (p *Player) hit(damage int) {
-	p.health -= damage
 	p.invincible = invincibilityDuration
+	if p.shieldTimer > 0 {
+		p.shieldTimer = 0
+		return
+	}
+	p.health -= damage
 }
 
 func (p *Player) centerX() float64 { return p.x + playerSize/2 }
@@ -134,5 +176,10 @@ func (p *Player) draw(screen *ebiten.Image) {
 		hx, hy, hw, hh := p.hitbox()
 		mark := color.RGBA{0xff, 0x3a, 0x3a, 0xff}
 		vector.DrawFilledRect(screen, float32(hx), float32(hy), float32(hw), float32(hh), mark, false)
+	}
+
+	if p.shieldTimer > 0 {
+		ring := color.RGBA{0x6a, 0xd0, 0xff, 0xff}
+		vector.StrokeRect(screen, float32(p.x-2), float32(p.y-2), playerSize+4, playerSize+4, 1, ring, false)
 	}
 }

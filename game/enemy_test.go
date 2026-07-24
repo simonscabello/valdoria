@@ -33,7 +33,7 @@ func TestBulletKillGrantsScore(t *testing.T) {
 	crow := newCrow(100)
 	crow.x, crow.y = 100, 100
 	g.enemies = append(g.enemies, crow)
-	g.bullets = append(g.bullets, &Bullet{x: crow.x, y: crow.y})
+	g.bullets = append(g.bullets, newBullet(crow.x, crow.y, 0, -1, 1, 0, lightColor))
 
 	g.handleCollisions()
 

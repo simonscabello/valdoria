@@ -32,6 +32,7 @@ type Game struct {
 	bullets      []*Bullet
 	enemies      []*Enemy
 	enemyBullets []*EnemyBullet
+	powerups     []*Powerup
 	stars        []*star
 
 	level       *Level
@@ -53,6 +54,7 @@ func (g *Game) reset() {
 	g.bullets = g.bullets[:0]
 	g.enemies = g.enemies[:0]
 	g.enemyBullets = g.enemyBullets[:0]
+	g.powerups = g.powerups[:0]
 	g.level = newLevel()
 	g.timeScale = devTimeScale
 	g.score = 0
@@ -88,7 +90,9 @@ func (g *Game) Update() error {
 	g.updateBullets()
 	g.updateEnemies()
 	g.updateEnemyBullets()
+	g.updatePowerups()
 	g.handleCollisions()
+	g.collectPowerups()
 	g.removeDead()
 
 	if g.player.health <= 0 {
@@ -170,6 +174,21 @@ func (g *Game) handleDebugSpawns() {
 	if inpututil.IsKeyJustPressed(ebiten.KeyDigit4) {
 		g.enemies = append(g.enemies, newWyvern(randX(wyvernSize)))
 	}
+
+	if !devMode {
+		return
+	}
+	g.debugSpawnPowerup(ebiten.KeyZ, powerLight)
+	g.debugSpawnPowerup(ebiten.KeyX, powerFire)
+	g.debugSpawnPowerup(ebiten.KeyC, powerIce)
+	g.debugSpawnPowerup(ebiten.KeyV, powerHeal)
+	g.debugSpawnPowerup(ebiten.KeyB, powerShield)
+}
+
+func (g *Game) debugSpawnPowerup(key ebiten.Key, kind powerupType) {
+	if inpututil.IsKeyJustPressed(key) {
+		g.powerups = append(g.powerups, newPowerup(kind, g.player.centerX(), 24))
+	}
 }
 
 func (g *Game) updateEnemies() {
@@ -196,45 +215,114 @@ func (g *Game) updateEnemyBullets() {
 }
 
 func (g *Game) handleCollisions() {
+	g.bulletEnemyCollisions()
+
+	if g.player.canBeHit() {
+		g.playerEnemyCollisions()
+	}
+	if g.player.canBeHit() {
+		g.playerBulletCollisions()
+	}
+}
+
+func (g *Game) bulletEnemyCollisions() {
+	for _, b := range g.bullets {
+		if b.dead {
+			continue
+		}
+		for _, e := range g.enemies {
+			if e.dead || b.alreadyHit(e) {
+				continue
+			}
+			if !collides(b.x, b.y, b.w, b.h, e.x, e.y, e.w, e.h) {
+				continue
+			}
+			e.takeDamage(b.damage)
+			b.hitEnemies = append(b.hitEnemies, e)
+			if e.dead {
+				g.score += e.score
+				g.spawnDrop(e)
+			}
+			if b.pierce > 0 {
+				b.pierce--
+				continue
+			}
+			b.dead = true
+			break
+		}
+	}
+}
+
+func (g *Game) playerEnemyCollisions() {
+	hx, hy, hw, hh := g.player.hitbox()
 	for _, e := range g.enemies {
 		if e.dead {
 			continue
 		}
-		for _, b := range g.bullets {
-			if b.dead {
-				continue
-			}
-			if collides(b.x, b.y, bulletWidth, bulletHeight, e.x, e.y, e.w, e.h) {
-				b.dead = true
-				e.takeDamage(1)
-				if e.dead {
-					g.score += e.score
-				}
-				break
-			}
-		}
-
-		if e.dead || !g.player.canBeHit() {
-			continue
-		}
-		hx, hy, hw, hh := g.player.hitbox()
 		if collides(hx, hy, hw, hh, e.x, e.y, e.w, e.h) {
 			e.dead = true
 			g.player.hit(e.damage)
+			return
 		}
 	}
+}
 
-	if g.player.canBeHit() {
-		hx, hy, hw, hh := g.player.hitbox()
-		for _, b := range g.enemyBullets {
-			if b.dead {
-				continue
-			}
-			if collides(hx, hy, hw, hh, b.x, b.y, enemyBulletSize, enemyBulletSize) {
-				b.dead = true
-				g.player.hit(enemyBulletDamage)
-				break
-			}
+func (g *Game) playerBulletCollisions() {
+	hx, hy, hw, hh := g.player.hitbox()
+	for _, b := range g.enemyBullets {
+		if b.dead {
+			continue
+		}
+		if collides(hx, hy, hw, hh, b.x, b.y, enemyBulletSize, enemyBulletSize) {
+			b.dead = true
+			g.player.hit(enemyBulletDamage)
+			return
+		}
+	}
+}
+
+func (g *Game) spawnDrop(e *Enemy) {
+	if e.hasDrop {
+		g.powerups = append(g.powerups, newPowerup(e.drop, e.centerX(), e.centerY()))
+		return
+	}
+	if rand.Float64() < dropChance {
+		g.powerups = append(g.powerups, newPowerup(randomRune(), e.centerX(), e.centerY()))
+	}
+}
+
+func randomRune() powerupType {
+	switch rand.Intn(5) {
+	case 0:
+		return powerLight
+	case 1:
+		return powerFire
+	case 2:
+		return powerIce
+	case 3:
+		return powerHeal
+	default:
+		return powerShield
+	}
+}
+
+func (g *Game) updatePowerups() {
+	for _, p := range g.powerups {
+		p.update()
+		if p.offScreen() {
+			p.dead = true
+		}
+	}
+}
+
+func (g *Game) collectPowerups() {
+	for _, p := range g.powerups {
+		if p.dead {
+			continue
+		}
+		if collides(g.player.x, g.player.y, playerSize, playerSize, p.x, p.y, powerupSize, powerupSize) {
+			g.player.applyPowerup(p.kind)
+			p.dead = true
 		}
 	}
 }
@@ -243,6 +331,7 @@ func (g *Game) removeDead() {
 	g.bullets = filterAlive(g.bullets, func(b *Bullet) bool { return !b.dead })
 	g.enemies = filterAlive(g.enemies, func(e *Enemy) bool { return !e.dead })
 	g.enemyBullets = filterAlive(g.enemyBullets, func(b *EnemyBullet) bool { return !b.dead })
+	g.powerups = filterAlive(g.powerups, func(p *Powerup) bool { return !p.dead })
 }
 
 // filterAlive mantém apenas os itens aprovados por keep, reaproveitando o array
@@ -269,6 +358,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	}
 	for _, b := range g.enemyBullets {
 		b.draw(screen)
+	}
+	for _, p := range g.powerups {
+		p.draw(screen)
 	}
 	for _, e := range g.enemies {
 		e.draw(screen)
@@ -298,6 +390,12 @@ func (g *Game) Draw(screen *ebiten.Image) {
 func (g *Game) drawHUD(screen *ebiten.Image) {
 	ebitenutil.DebugPrintAt(screen, "SCORE "+itoa(g.score), 4, 4)
 	ebitenutil.DebugPrintAt(screen, "VIDA "+itoa(g.player.health), 4, 16)
+
+	weapon := weaponName(g.player.weapon) + " Nv" + itoa(g.player.weaponLevel)
+	ebitenutil.DebugPrintAt(screen, weapon, 4, ScreenHeight-16)
+	if g.player.hasShield() {
+		ebitenutil.DebugPrintAt(screen, "ESCUDO", ScreenWidth-46, ScreenHeight-16)
+	}
 
 	// Barra de progresso discreta na borda superior.
 	barWidth := float32(g.level.progress() * ScreenWidth)
