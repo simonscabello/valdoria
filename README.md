@@ -131,7 +131,20 @@ As teclas de desenvolvimento (`1`–`4`, `Z`/`F`/`C`/`V`/`B`, `Tab`, `F1`–`F3`
   - **Feiticeiro corrompido**: para no alto, desliza de lado e solta anéis completos de projéteis; frágil, mas perigoso se ignorado.
 - Inimigos que atiram exibem um **telegraph** (contorno de alerta piscante) antes de disparar.
 - Projéteis inimigos com cor própria (magenta/roxo com núcleo claro e contorno), deliberadamente distinta de todas as armas do jogador para leitura imediata de aliado × inimigo; indicação visual de dano (piscada branca) ao acertar um inimigo.
-- **Fuga pela base**: se um inimigo atravessar a parte de baixo da tela sem ser destruído, o jogador **perde uma vida** (saídas laterais, como a gárgula, não contam). Durante a invencibilidade pós-morte a fuga ainda remove o inimigo, mas não empilha perdas.
+- **Medidor de Corrupção** — a mecânica central do jogo. Todo inimigo que atravessa a **base** da tela corrompe o reino (saídas laterais, como a da gárgula, não contam: é parte do design dela). A corrupção nunca desce sozinha e atravessa cinco faixas:
+
+  | Corrupção | Faixa | Mundo | Recompensa |
+  | --- | --- | --- | --- |
+  | 0–25% | Reino Firme | normal | — |
+  | 26–50% | Sombra Crescente | inimigos +15% de vida | pontos ×1,3 · drops +20% |
+  | 51–75% | Cerco | **inimigos nascem corrompidos** | pontos ×1,8 · drops +35% |
+  | 76–99% | Colapso | inimigos +50% de vida | pontos ×2,5 · drops +50% |
+  | 100% | Queda de Valdoria | **Vharak Ascendido** | pontos ×3,0 |
+
+  A corrupção é ao mesmo tempo a punição e a recompensa: quem deixa passar por descuido é punido; quem deixa passar **de propósito** está apostando. Peso por inimigo (corvo 0,6 · harpia 1,2 · feiticeiro/balista 2,0 · wyvern 2,8) calibrado por medição para que ~5% de fugas mantenha o reino em pé e ~40% o derrube.
+  - **Variantes corrompidas** (a partir do Cerco): mais vida e pontos, halo pulsante e um traço novo — o **corvo-sombra** dispara ao descer, a harpia fica mais rápida e agressiva, o wyvern troca o tiro mirado por um leque.
+  - **Leitura**: coluna do medidor na borda direita com as marcas das faixas, percentual no HUD, aviso de faixa nova no centro da tela, contorno e seta nos inimigos prestes a escapar, e o cenário perdendo saturação rumo ao violeta conforme o reino apodrece.
+  - **Vharak Ascendido**: com o reino caído, o confronto final é outro — +60% de vida, +25% de velocidade, um padrão a mais por fase e cristais expostos já na segunda fase.
 - Colisão projétil × inimigo e jogador × inimigo/projétil, sem dano repetido de inimigos já destruídos.
 - **Campanha de três fases encadeadas**, descritas de forma **declarativa (dados, não código)** em `stages.go` (`stageDef`/`waveDef`), o que torna trivial adicionar/editar fases:
   - **Fase 1 — O Cerco de Eldoria**: campos, vila em chamas, muralhas e castelo (corvos → harpias → gárgulas → wyverns).
@@ -140,13 +153,16 @@ As teclas de desenvolvimento (`1`–`4`, `Z`/`F`/`C`/`V`/`B`, `Tab`, `F1`–`F3`
   - Cada fase tem biomas/temas próprios, avisos de trecho, barra de progresso com marcos e encadeia para a seguinte; só a última invoca o chefe.
   - **Ritmo denso e contínuo**: ondas curtas e sobrepostas mantêm a tela sempre com ação (sem esperas mortas).
 - **Modos de jogo**: **Campanha** (fases + chefe) e **Sobrevivência** (ondas infinitas com dificuldade crescente e recorde próprio).
-- **Dificuldades** Fácil / Normal / Difícil (vidas e bombas iniciais, vida dos inimigos, chance de drop e **variação de spawn**: posição X e ritmo entre aparições da mesma onda — Fácil fica previsível; Difícil espalha bem), selecionáveis no menu e persistidas.
+- **Dificuldades** Fácil / Normal / Difícil, selecionáveis no menu e persistidas. Cada preset mexe nos quatro eixos que definem a pressão de um shmup: quanta ameaça existe (vida dos inimigos), com que rapidez ela chega (**velocidade dos projéteis**), com que frequência (**cadência de tiro**) e quanto o jogador aguenta (vidas e bombas iniciais, **invencibilidade**, chance de drop), além da **variação de spawn** (posição X e ritmo — Fácil fica previsível; Difícil espalha bem).
 - **Três magias, cada uma com três níveis**:
-  - **Lança de Luz** (inicial): disparos retos densos (2 → 3 → 4), dano alto; **atordoa** o alvo e lança um **arco dourado** no inimigo próximo (metade do dano + stun curto). Nv3 ainda perfura 1.
-  - **Chamas do Dragão**: leque curto (3 → 4 → 5); aplica **queimadura** (dano ao longo do tempo) e deixa o inimigo **mais frágil** (+50% dano recebido).
-  - **Lanças de Gelo**: tiros pesados com perfuração; **congela o ritmo** do inimigo (movimento e tiros ~40% mais lentos).
-- **Power-ups** que caem de inimigos e saem da tela se não coletados: Runa da Luz/Fogo/Gelo (coletar a runa da arma atual sobe o nível até o máximo 3; a runa de outra arma troca o tipo **preservando o nível atual** — trocar nunca rebaixa o poder), Cura (limitada à vida máxima) e Escudo temporário (absorve um ataque). Chance de drop configurável e alguns drops garantidos por onda.
-- HUD com arma, nível e estado do escudo.
+  - **Lança de Luz** (inicial): disparos retos densos (2 → 3 → 4) e o maior dano focado do jogo. Não perfura e não aplica status — é precisão pura, a magia de encarar alvo único e chefe.
+  - **Chamas do Dragão**: leque de contagem ímpar (3 → 5 → 9, com tiro central sempre) que abre no Nv3; aplica **queimadura** (dano ao longo do tempo) e deixa o inimigo **mais frágil** (+50% dano recebido). Domina formações lado a lado.
+  - **Lanças de Gelo**: o tiro mais pesado e o único que perfura fundo (1 → 2 → 3 alvos); cadência baixa e **congela o ritmo** do inimigo (movimento e tiros ~40% mais lentos). Domina filas descendo alinhadas.
+- **Power-ups** que caem de inimigos e saem da tela se não coletados: Runa da Luz/Fogo/Gelo, Cura (limitada à vida máxima) e Escudo temporário (absorve um ataque).
+  - **Toda runa elemental equipa aquele elemento e avança a carga de poder.** A cada três runas o nível sobe (até o máximo 3), e as marcas de carga no HUD mostram o progresso. Nível e carga são uma potência compartilhada entre as três magias: trocar de elemento nunca rebaixa nem desperdiça.
+  - No teto de poder os drops passam a favorecer cura e escudo, para nenhuma runa cair inerte.
+  - Chance de drop configurável e alguns drops garantidos por onda.
+- HUD com arma, nível, marcas de carga rumo ao próximo nível e estado do escudo.
 - **Vidas e barra de energia**: barra de HP; ao zerar, perde uma vida e reaparece (limpa os projéteis inimigos, ganha invencibilidade, volta a uma área segura e perde apenas um nível de arma). Início com três vidas; sem vidas, Game Over.
 - **Invocação Ancestral (bomba)**: `X`/`Ctrl` limpa os projéteis inimigos, causa dano elevado a todos os inimigos, deixa o jogador invulnerável por instantes e exibe um dragão atravessando a tela. Começa com duas cargas (mostradas no HUD) e não pode ser usada em pausa/Game Over.
 - **Pontuação avançada**: pontos por tipo de inimigo, bônus por destruir uma formação completa, bônus por concluir um trecho sem sofrer dano, multiplicador por eliminações consecutivas (decai sem eliminações ou ao sofrer dano) e maior pontuação local da sessão.
@@ -155,7 +171,7 @@ As teclas de desenvolvimento (`1`–`4`, `Z`/`F`/`C`/`V`/`B`, `Tab`, `F1`–`F3`
   - **Menu inicial** ("Asas de Valdoria"): Iniciar jogo, Sobrevivência, Dificuldade, Controles, Vibração e Sair; mostra os recordes (campanha e sobrevivência).
   - **Controles**: lista todas as teclas do jogo.
   - **Game Over**: pontuação, trecho alcançado, inimigos derrotados e maior multiplicador, com opções de tentar novamente ou voltar ao menu.
-  - **Vitória**: conclusão da fase, pontuação final, bônus por vidas e bombas restantes e tempo de conclusão, com opções de jogar novamente ou voltar ao menu.
+  - **Vitória**: conclusão da fase, pontuação final, bônus por vidas restantes e tempo de conclusão, com opções de jogar novamente ou voltar ao menu. Não há bônus por bomba guardada — o placar não deve pagar para o jogador não usar a Invocação Ancestral.
 - Reiniciar cria uma sessão completamente nova, sem inimigos, projéteis, power-ups ou estado anterior; a pausa não funciona no menu, o Game Over não avança a fase e a vitória interrompe os ataques. As confirmações usam borda de tecla (sem disparos múltiplos no mesmo pressionamento).
 - **Identidade visual e efeitos** (pixel art procedural + formas geométricas no cenário; sem assets externos obrigatórios):
   - **Sprites em pixel art (arcade 16-bit)** para o jogador, os seis inimigos, o chefe Vharak e as **runas/power-ups** (luz, fogo, gelo, vida, escudo), com sistema de fallback igual ao do áudio: usa `assets/sprites/<nome>.png` se existir, senão gera a arte por código. Sprites escalados à hitbox, com batida de asa nos voadores e leve flutuação nas runas. Prévia: `VALDORIA_EXPORT_SPRITES=/tmp/s.png go test ./game/ -run TestExportSpritePreviews`.
@@ -226,7 +242,11 @@ licença de cada um.
 
 - Cenário ainda é geométrico (parallax); UI e projéteis usam molduras/glow vetoriais, não sprites PNG.
 - Áudio procedural simples, sem trilha/efeitos produzidos.
-- Campanha de três fases com um **único chefe** ao final (Vharak); ainda sem chefe intermediário.
+- Campanha de três fases com um **único chefe** ao final (Vharak, em duas versões); ainda sem chefe intermediário.
+- Curva de poder: com apenas três níveis de arma, o teto chega a ~33% da partida. Só as Runas Fundidas (v0.6) resolvem isso — ver `GAME_DIRECTION.md`.
+- A corrupção ainda não pode ser purificada: falta o Altar entre trechos (v0.6).
+- O medidor divide espaço com o campo de jogo; a moldura lateral decorada que lhe daria palco próprio ainda não existe.
+- Sem suporte a gamepad: a entrada é lida direto do teclado, sem camada de ações.
 - Builds e testes cobrem apenas `amd64` (Linux e Windows).
 - A nova fonte de UI e os biomas das fases 2-3 ainda dependem de verificação visual manual (sem teste de renderização).
 
@@ -247,18 +267,18 @@ licença de cada um.
 | Dificuldades | Sim (Fácil/Normal/Difícil) |
 | Persistência | Sim (recordes e opções em disco) |
 | Seis tipos de inimigos | Sim (corvo, harpia, gárgula, wyvern, balista, feiticeiro) |
-| Três armas | Sim (Luz, Chamas, Gelo — três níveis cada, som próprio) |
+| Três armas | Sim (Luz, Chamas, Gelo — três níveis cada, identidades medidas, som próprio) |
 | Power-ups | Sim (runas, cura, escudo) |
 | Vidas | Sim (respawn; quantidade varia por dificuldade) |
 | Pontuação | Sim (formação, sem dano, multiplicador, recorde) |
 | Bomba especial | Sim (Invocação Ancestral) |
-| Chefe com fases | Sim (Vharak, três fases) |
+| Chefe com fases | Sim (Vharak, três fases; Ascendido com o reino caído) |
 | Game Over | Sim |
 | Vitória | Sim |
 | Pausa | Sim |
 | Áudio | Sim (música + efeitos, procedural) |
 | Modo de desenvolvimento | Sim (via variáveis de ambiente) |
-| Testes | Sim (105 testes automatizados) |
+| Testes | Sim (139 testes automatizados) |
 | Build executável | Sim (Linux e Windows) |
 
 ## Estrutura do projeto
@@ -266,8 +286,10 @@ licença de cada um.
 ```
 valdoria/
 ├── cmd/
-│   └── game/
-│       └── main.go     # ponto de entrada, versão, logs e janela
+│   ├── game/
+│   │   └── main.go     # ponto de entrada, versão, logs e janela
+│   └── balance/
+│       └── main.go     # relatório de balanceamento (headless)
 ├── go.mod
 ├── Makefile            # run, dev, test, build, build-linux, build-windows
 ├── LICENSE             # licença MIT do código
@@ -289,6 +311,8 @@ valdoria/
     ├── level.go        # execução da fase (linha do tempo de ondas e trechos)
     ├── stages.go       # campanha em dados: fases 1-3 (stageDef/waveDef)
     ├── difficulty.go   # presets Fácil/Normal/Difícil (multiplicadores)
+    ├── balance.go      # simulação e critérios de balanceamento (sem janela)
+    ├── corruption.go   # Medidor de Corrupção, faixas e variantes corrompidas
     ├── save.go         # persistência de recordes e opções (JSON)
     ├── weapon.go       # as três magias, níveis, leque e som por arma
     ├── powerup.go      # runas, cura e escudo
@@ -305,7 +329,7 @@ valdoria/
     ├── uitext.go       # fonte própria da interface (text/v2 + basicfont)
     ├── effects.go      # vibração de tela e flash de dano
     ├── audio.go        # gerenciador de áudio (música, efeitos, volumes, mudo)
-    └── *_test.go       # 105 testes (jogador, armas, inimigos, ondas, chefe, fluxo, dev, áudio, integração, save, sobrevivência, sprites)
+    └── *_test.go       # 139 testes (jogador, armas, inimigos, ondas, chefe, fluxo, dev, áudio, integração, save, sobrevivência, sprites)
 ```
 
 ## Modo de desenvolvimento
@@ -355,9 +379,30 @@ VALDORIA_SEED=42 go run ./cmd/game
 Com a semente fixa, cada reinício da sessão recomeça exatamente a mesma
 sequência de sorteios. Em código/testes, use `game.SetSeed(42)`.
 
+## Ferramenta de balanceamento
+
+O jogo traz um simulador *headless* que roda a lógica real (armas, projéteis,
+colisões, status, chefe e a linha do tempo das fases) sem janela e sem áudio,
+e verifica critérios objetivos de balanceamento:
+
+```bash
+go run ./cmd/balance
+```
+
+Ele reporta o dano por segundo de cada arma nos três cenários que definem as
+identidades (alvo único distante, formação lado a lado e fila vertical), a
+duração real do confronto com Vharak por arma, a composição do bestiário e a
+curva de poder da partida. Aceita `-diff facil|normal|dificil` e `-seed N`.
+
+Existe porque números de balanceamento não se descobrem lendo código: o
+stun-lock da Lança de Luz — que congelava qualquer inimigo sob fogo contínuo e
+matava o chefe em 5 segundos — atravessou mais de cem testes intactos, porque
+nenhum teste perguntava se o jogo era justo, só se ele funcionava. Os mesmos
+critérios rodam no `go test` (`TestBestiaryIsBalanced`).
+
 ## Testes automatizados
 
-São **105 testes** (`go test ./...`), cobrindo as regras independentes de renderização:
+São **139 testes** (`go test ./...`), cobrindo as regras independentes de renderização:
 
 - **Jogador**: clamp na tela, escudo, respawn e redução de arma, invencibilidade dev, normalização da diagonal.
 - **Armas**: troca, progressão de nível, teto, ângulos do leque, perfuração do gelo.

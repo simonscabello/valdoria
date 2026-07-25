@@ -36,6 +36,38 @@ Atalhos de desenvolvimento (somente com `VALDORIA_DEV=1`): `F1` HUD, `F2` hitbox
 
 ---
 
+## 0. Balanceamento (automático)
+
+Antes do roteiro manual, rode a medição — ela verifica em segundos o que levaria
+uma hora de playtest para perceber:
+
+```bash
+go run ./cmd/balance
+```
+
+- [ ] Todos os critérios aparecem como `OK`.
+- [ ] Na seção AMEACA, nenhum inimigo passa de 2,0s de tempo-para-matar e todos os armados disparam ao menos uma vez.
+- [ ] Na seção PRESSAO, os dois modelos de jogador **morrem** antes do fim da campanha.
+- [ ] Rodando com `-diff facil` e `-diff dificil`, a sobrevivência do modelo passivo muda claramente.
+- [ ] Cada cenário tem uma arma dona diferente (foco/formação/coluna).
+- [ ] O confronto com Vharak dura entre 60 e 180 s com **cada uma** das magias.
+
+---
+
+## 0.1 Medidor de Corrupção
+
+- [ ] Deixar um corvo passar pela base enche um pouco a coluna na borda direita e toca um som grave.
+- [ ] Uma gárgula saindo pela **lateral** não muda o medidor.
+- [ ] Inimigos prestes a cruzar a base ganham contorno magenta e uma seta; a linha do rodapé pulsa.
+- [ ] Ao cruzar 26%, aparece "O REINO SE CORROMPE / SOMBRA CRESCENTE" e a tela treme.
+- [ ] Acima de 51% os inimigos nascem com halo magenta; os corvos passam a atirar uma vez ao descer.
+- [ ] O cenário vai perdendo cor e ganhando veias magenta nas bordas conforme o medidor sobe.
+- [ ] Com o medidor em 100%, o chefe se apresenta como "VHARAK ASCENDIDO" e a vitória diz "VALDORIA CAIU".
+- [ ] Game Over e Vitória mostram a corrupção final e o número de fugas.
+- [ ] Reiniciar zera o medidor.
+
+---
+
 ## 1. Menu inicial
 
 - [ ] O título "Asas de Valdoria" e a descrição aparecem, em **fonte própria** (não a fonte de debug).
@@ -56,6 +88,10 @@ Atalhos de desenvolvimento (somente com `VALDORIA_DEV=1`): `F1` HUD, `F2` hitbox
 - [ ] Movimento é limitado às bordas da tela.
 - [ ] Shift ativa precisão (mais lento) e mostra a marca de colisão menor.
 - [ ] Espaço dispara de forma contínua, com intervalo consistente e dois projéteis.
+- [ ] Coletar uma runa acende uma marca de carga no HUD; a cada três marcas o nível sobe e as marcas zeram.
+- [ ] Trocar de elemento preserva nível e carga (nunca é uma perda).
+- [ ] No nível 3 as marcas de carga somem e passam a cair mais curas/escudos.
+- [ ] Nenhuma magia congela inimigos no lugar (a Luz causa só dano).
 - [ ] Trecho 1 (Campos) é acessível: apenas corvos, bem espaçados.
 - [ ] Aparece a Runa de Fogo logo no início e troca a arma ao coletar.
 - [ ] Coletar a mesma runa aumenta o nível (até 3); runa diferente troca a arma **mantendo o nível** (trocar nunca rebaixa o poder — dá vontade de pegar qualquer runa).
@@ -64,7 +100,7 @@ Atalhos de desenvolvimento (somente com `VALDORIA_DEV=1`): `F1` HUD, `F2` hitbox
 - [ ] A dificuldade sobe por trecho: Vila (harpias com tiro), Muralhas (gárgulas), Castelo (wyverns).
 - [ ] Avisos de trecho aparecem ("A vila esta sob ataque!", etc.) e a barra de progresso avança.
 - [ ] Colisões: projétil destrói inimigo; encostar em inimigo causa dano.
-- [ ] Se um inimigo atravessar a base da tela sem ser abatido, o jogador perde uma vida (saída lateral da gárgula não conta).
+- [ ] Se um inimigo atravessar a base da tela sem ser abatido, ele some sem render pontos e invalida o bônus da formação (não há perda de vida — a penalidade por fuga chega na v0.3).
 - [ ] Projéteis inimigos (magenta/roxo) são claramente distinguíveis dos disparos do jogador, inclusive das chamas laranjas.
 - [ ] Inimigos que atiram (harpia, gárgula, wyvern) piscam um contorno de alerta **antes** de disparar.
 - [ ] O ritmo é contínuo: quase sempre há inimigos na tela, sem longas esperas.
@@ -80,7 +116,7 @@ Atalhos de desenvolvimento (somente com `VALDORIA_DEV=1`): `F1` HUD, `F2` hitbox
 - [ ] Ao tomar dano há invencibilidade curta com piscar; sem dano múltiplo no mesmo instante.
 - [ ] Pontuação sobe; multiplicador de combo aumenta em sequência e zera ao tomar dano.
 - [ ] Bônus por formação completa e por trecho sem dano são somados.
-- [ ] Ao zerar o HP perde uma vida e reaparece com invencibilidade, arma reduzida em 1 nível e projéteis inimigos limpos.
+- [ ] Ao zerar o HP perde uma vida e reaparece com invencibilidade, **vida inicial (3, não o máximo)**, arma reduzida em 1 nível, carga zerada e projéteis inimigos limpos.
 - [ ] Com 0 vidas vai para Game Over.
 - [ ] Invocação ancestral (X/Ctrl): limpa projéteis inimigos, causa dano em área, deixa o jogador invulnerável e consome uma carga (HUD atualiza).
 - [ ] Bomba não funciona no menu, pausa, Game Over ou vitória.
