@@ -15,8 +15,8 @@ func TestLoseLifeRespawnsThenGameOver(t *testing.T) {
 	if g.state != statePlaying {
 		t.Error("deveria continuar jogando após reaparecer")
 	}
-	if g.player.health != maxHealth {
-		t.Errorf("vida deveria ser restaurada, foi %d", g.player.health)
+	if g.player.health != initialHealth {
+		t.Errorf("vida deveria ser restaurada ao inicial (%d), foi %d", initialHealth, g.player.health)
 	}
 
 	g.player.health = 0

@@ -22,8 +22,14 @@ type EnemyBullet struct {
 	dead   bool
 }
 
+// newEnemyBullet cria um projétil inimigo já com a velocidade ajustada pela
+// dificuldade — é aqui que Fácil e Difícil deixam de jogar igual.
 func newEnemyBullet(x, y, vx, vy float64) *EnemyBullet {
-	return &EnemyBullet{x: x - enemyBulletSize/2, y: y, vx: vx, vy: vy}
+	mul := diffParams().bulletSpeedMul
+	if mul <= 0 {
+		mul = 1
+	}
+	return &EnemyBullet{x: x - enemyBulletSize/2, y: y, vx: vx * mul, vy: vy * mul}
 }
 
 func (b *EnemyBullet) update() {

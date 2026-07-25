@@ -161,6 +161,13 @@ func wingFrameName(base string, phase float64) string {
 // drawSprite desenha o sprite centrado em (cx, cy), com escala, espelhamento
 // horizontal e rotação opcionais. Se flash for verdadeiro, usa a silhueta branca.
 func drawSprite(dst *ebiten.Image, name string, cx, cy, scale float64, flipX bool, rot float64, flash bool) bool {
+	return drawSpriteTinted(dst, name, cx, cy, scale, flipX, rot, flash, nil)
+}
+
+// drawSpriteTinted é a versão com tingimento: multiplica o sprite por uma cor,
+// usada para as variantes corrompidas reaproveitarem a mesma pixel art com uma
+// identidade cromática própria (sem custo de arte nova).
+func drawSpriteTinted(dst *ebiten.Image, name string, cx, cy, scale float64, flipX bool, rot float64, flash bool, tint *color.RGBA) bool {
 	img := sprite(name)
 	if img == nil {
 		return false
@@ -183,6 +190,10 @@ func drawSprite(dst *ebiten.Image, name string, cx, cy, scale float64, flipX boo
 		op.GeoM.Rotate(rot)
 	}
 	op.GeoM.Translate(cx, cy)
+	if tint != nil && !flash {
+		op.ColorScale.Scale(
+			float32(tint.R)/0xff, float32(tint.G)/0xff, float32(tint.B)/0xff, 1)
+	}
 	dst.DrawImage(img, op)
 	return true
 }

@@ -80,6 +80,8 @@ type Game struct {
 
 	save saveData
 
+	corruption Corruption
+
 	sectionDamaged bool
 	lastSection    int
 	formations     map[int]*formationTracker
@@ -93,7 +95,6 @@ type Game struct {
 	maxMult          int
 	elapsedTicks     int
 	victoryLifeBonus int
-	victoryBombBonus int
 	victoryTime      int
 
 	audio *AudioManager
@@ -169,6 +170,7 @@ func (g *Game) reset() {
 	g.score = 0
 	g.combo = 0
 	g.comboTimer = 0
+	g.corruption.reset()
 	g.sectionDamaged = false
 	g.lastSection = g.level.section
 	g.formations = map[int]*formationTracker{}
@@ -179,7 +181,6 @@ func (g *Game) reset() {
 	g.maxMult = 1
 	g.elapsedTicks = 0
 	g.victoryLifeBonus = 0
-	g.victoryBombBonus = 0
 	g.victoryTime = 0
 
 	g.particles = g.particles[:0]
@@ -207,7 +208,9 @@ func (g *Game) startNewGame() {
 func (g *Game) startBoss() {
 	g.enemies = g.enemies[:0]
 	g.enemyBullets = g.enemyBullets[:0]
-	g.boss = newBoss()
+	// Reino caído = confronto verdadeiro. A aposta do jogador decide qual dos
+	// dois finais ele vai ver.
+	g.boss = newBoss(g.corruption.fallen())
 	g.state = stateBoss
 }
 
@@ -490,6 +493,7 @@ func (g *Game) updatePlay() {
 	g.collectPowerups()
 	g.removeDead()
 
+	g.corruption.update()
 	g.updateParallax()
 	g.updateParticles()
 	g.updatePopups()
@@ -575,8 +579,7 @@ func (g *Game) checkBossDefeat() {
 	}
 	g.victoryTime = g.elapsedTicks / 60
 	g.victoryLifeBonus = g.lives * lifeBonus
-	g.victoryBombBonus = g.bombCharges * bombBonusPoints
-	g.score += bossScore + g.victoryLifeBonus + g.victoryBombBonus
+	g.score += bossScore + g.victoryLifeBonus
 	if g.score > g.highScore {
 		g.highScore = g.score
 	}
@@ -592,8 +595,23 @@ func (g *Game) spawnFromLevel() {
 		if e.formationID > 0 {
 			g.registerFormationMember(e.formationID)
 		}
-		g.enemies = append(g.enemies, e)
+		g.spawn(e)
 	}
+}
+
+// spawn coloca um inimigo em jogo já marcado pelo estado do reino: em corrupção
+// alta ele nasce mais resistente e, a partir do Cerco, corrompido.
+//
+// A corrupção é aplicada **no instante do spawn**, não continuamente: inimigos
+// já em cena não mudam sob os pés do jogador.
+func (g *Game) spawn(e *Enemy) {
+	if g.corruption.mutates() {
+		mutateEnemy(e)
+	}
+	if mul := g.corruption.healthMul(); mul > 1 {
+		e.health = int(float64(e.health)*mul + 0.5)
+	}
+	g.enemies = append(g.enemies, e)
 }
 
 // updateBestScore mantém o recorde do modo atual atualizado em tempo real.
@@ -645,8 +663,7 @@ func (g *Game) spawnRandomEnemy(minute int) {
 		pool = append(pool, kindBallista, kindWyvern, kindMage)
 	}
 	kind := pool[rng.Intn(len(pool))]
-	e := spawnEnemy(kind, randX(enemySpawnSize(kind)), 0, rng.Intn(2) == 0)
-	g.enemies = append(g.enemies, e)
+	g.spawn(spawnEnemy(kind, randX(enemySpawnSize(kind)), 0, rng.Intn(2) == 0))
 }
 
 // enemySpawnSize devolve a largura usada para posicionar o spawn na horizontal.
@@ -735,7 +752,7 @@ func (g *Game) useBomb() {
 		}
 	}
 	if g.boss != nil {
-		g.boss.takeDamage(bombDamage / 20) // dano relevante, mas não instantâneo
+		g.boss.takeDamage(bombBossDamage) // dano relevante, mas não instantâneo
 	}
 	g.player.invincible = bombInvincibility
 	g.bombEffectTimer = bombEffectDuration
@@ -872,6 +889,7 @@ func (g *Game) updateEnemies() {
 		e.update(ctx)
 		if e.offScreen() {
 			e.escaped = true
+			e.escapedBottom = e.crossedBottom()
 			e.dead = true
 		}
 	}
@@ -948,9 +966,6 @@ func (g *Game) bulletEnemyCollisions() {
 			e.takeDamage(b.damage)
 			e.applyWeaponHit(b.element)
 			b.hitEnemies = append(b.hitEnemies, e)
-			if b.element == weaponLight {
-				g.applyLightChain(e, b.damage)
-			}
 			if e.dead {
 				points := g.registerKill(e.score)
 				g.spawnDrop(e)
@@ -967,28 +982,6 @@ func (g *Game) bulletEnemyCollisions() {
 			b.dead = true
 			break
 		}
-	}
-}
-
-// applyLightChain: a Lança de Luz arremessa um arco dourado no inimigo mais
-// próximo — metade do dano + atordoamento curto (a surpresa da arma).
-func (g *Game) applyLightChain(from *Enemy, damage int) {
-	target := lightChainTarget(g.enemies, from.centerX(), from.centerY(), from)
-	if target == nil {
-		return
-	}
-	chain := int(float64(damage) * lightChainRatio)
-	if chain < 1 {
-		chain = 1
-	}
-	target.takeDamage(chain)
-	target.stun = lightChainStun
-	g.spawnTrail(target.centerX(), target.centerY(), lightColor)
-	if target.dead {
-		points := g.registerKill(target.score)
-		g.spawnDrop(target)
-		g.spawnExplosion(target.centerX(), target.centerY(), target.color)
-		g.spawnScorePopup(target.centerX(), target.y, points)
 	}
 }
 
@@ -1021,13 +1014,26 @@ func (g *Game) playerBulletCollisions() {
 	}
 }
 
+// onEnemyEscaped registra um inimigo que atravessou a base do reino. É o único
+// lugar em que a corrupção sobe — e o coração do diferencial do jogo.
+func (g *Game) onEnemyEscaped(e *Enemy) {
+	if !g.corruption.add(e.kind) {
+		g.audio.playSFX(sfxEscape)
+		return
+	}
+	// A faixa mudou: o reino piorou de nível. O momento precisa ser sentido.
+	g.audio.playSFX(sfxCorruption)
+	g.addShake(shakeCorruptionMagnitude)
+	g.spawnBurst(e.centerX(), ScreenHeight-4, 14, 2.2, 30, 3, false, g.corruption.barColor())
+}
+
 // registerKill contabiliza uma eliminação por disparo, aplica o multiplicador de
-// combo e devolve os pontos efetivamente concedidos (para exibição).
+// combo e a bonificação da corrupção, e devolve os pontos concedidos.
 func (g *Game) registerKill(base int) int {
 	g.combo++
 	g.comboTimer = comboWindow
 	mult := g.multiplier()
-	points := base * mult
+	points := int(float64(base*mult) * g.corruption.scoreMul())
 	g.score += points
 	if mult > g.maxMult {
 		g.maxMult = mult
@@ -1084,23 +1090,42 @@ func (g *Game) spawnDrop(e *Enemy) {
 		g.powerups = append(g.powerups, newPowerup(e.drop, e.centerX(), e.centerY()))
 		return
 	}
-	if rng.Float64() < scaledDropChance(dropChance) {
-		g.powerups = append(g.powerups, newPowerup(randomRune(), e.centerX(), e.centerY()))
+	if rng.Float64() < scaledDropChance(dropChance)*g.corruption.dropMul() {
+		g.powerups = append(g.powerups, newPowerup(g.randomRune(), e.centerX(), e.centerY()))
 	}
 }
 
-func randomRune() powerupType {
+// randomRune sorteia o conteúdo de um drop. No teto de poder as runas
+// elementais viram utilidade (cura/escudo): antes, um jogador no nível máximo
+// via dezenas de runas caírem sem efeito nenhum pelo resto da partida.
+func (g *Game) randomRune() powerupType {
+	if g.player != nil && g.player.weaponLevel >= maxWeaponLevel {
+		if rng.Intn(4) == 0 {
+			return randomElementRune() // ainda permite trocar de elemento
+		}
+		if rng.Intn(2) == 0 {
+			return powerHeal
+		}
+		return powerShield
+	}
 	switch rng.Intn(5) {
-	case 0:
-		return powerLight
-	case 1:
-		return powerFire
-	case 2:
-		return powerIce
 	case 3:
 		return powerHeal
-	default:
+	case 4:
 		return powerShield
+	default:
+		return randomElementRune()
+	}
+}
+
+func randomElementRune() powerupType {
+	switch rng.Intn(3) {
+	case 0:
+		return powerFire
+	case 1:
+		return powerIce
+	default:
+		return powerLight
 	}
 }
 
@@ -1134,6 +1159,9 @@ func (g *Game) removeDead() {
 		}
 		if !e.escaped {
 			g.enemiesDefeated++
+		}
+		if e.escapedBottom {
+			g.onEnemyEscaped(e)
 		}
 		if e.formationID > 0 {
 			g.accountFormation(e)
@@ -1234,7 +1262,9 @@ func (g *Game) drawWorld(screen *ebiten.Image) {
 // drawScene desenha o cenário e as entidades. Projéteis são desenhados por
 // último para permanecerem visíveis acima das partículas e efeitos.
 func (g *Game) drawScene(dst *ebiten.Image) {
-	theme := g.level.theme()
+	// O cenário perde cor conforme o reino se corrompe: o estado da partida
+	// precisa ser legível sem olhar o HUD.
+	theme := g.level.theme().corrupted(g.corruption.ratio())
 	dst.Fill(theme.sky)
 	g.drawParallax(dst, theme)
 
@@ -1265,11 +1295,65 @@ func (g *Game) drawScene(dst *ebiten.Image) {
 	if g.bombEffectTimer > 0 {
 		g.drawBombEffect(dst)
 	}
+	g.drawCorruptionOverlay(dst)
+	g.drawEscapeWarnings(dst)
 
 	g.drawPopups(dst)
 
 	if dev.showHitboxes {
 		g.drawHitboxes(dst)
+	}
+}
+
+// drawCorruptionOverlay tinge a cena e faz veias crescerem das bordas conforme
+// o reino apodrece. É desenhado depois do cenário e antes do HUD.
+func (g *Game) drawCorruptionOverlay(dst *ebiten.Image) {
+	r := g.corruption.ratio()
+	if r <= 0 {
+		return
+	}
+	if tint := g.corruption.params().tint; tint.A > 0 {
+		vector.DrawFilledRect(dst, 0, 0, ScreenWidth, ScreenHeight, tint, false)
+	}
+
+	// Veias magenta entrando pelas laterais: a corrupção invadindo o quadro.
+	depth := float32(r * 26)
+	if depth < 1 {
+		return
+	}
+	vein := withAlpha(corruptedAccent, uint8(40+70*r))
+	for i := 0; i < 5; i++ {
+		y := float32(20 + i*62)
+		h := float32(2)
+		vector.DrawFilledRect(dst, 0, y, depth*float32(1+i%2), h, vein, false)
+		vector.DrawFilledRect(dst, ScreenWidth-depth*float32(2-i%2), y+28, depth*float32(2-i%2), h, vein, false)
+	}
+}
+
+// drawEscapeWarnings destaca quem está prestes a cruzar a base do reino.
+//
+// Sem este aviso a corrupção subiria "sozinha" aos olhos do jogador. Com ele, a
+// fuga vira uma decisão consciente: dá tempo de perseguir, ou de deixar passar
+// de propósito e aceitar a aposta.
+func (g *Game) drawEscapeWarnings(dst *ebiten.Image) {
+	warned := false
+	for _, e := range g.enemies {
+		if e.dead || !e.aboutToEscape() || corruptionWeight(e.kind) <= 0 {
+			continue
+		}
+		warned = true
+		if (e.animTick/4)%2 == 0 {
+			vector.StrokeRect(dst,
+				float32(e.x-3), float32(e.y-3), float32(e.w+6), float32(e.h+6),
+				1, corruptedAccent, false)
+		}
+		// Seta apontando para baixo: "este vai passar".
+		vector.DrawFilledRect(dst, float32(e.centerX()-1), float32(e.y+e.h+3), 2, 4, corruptedAccent, false)
+	}
+	if warned {
+		// Filete pulsante na base: a linha que não deveria ser cruzada.
+		a := uint8(80 + 60*((g.elapsedTicks/6)%2))
+		vector.DrawFilledRect(dst, 0, ScreenHeight-1, ScreenWidth, 1, withAlpha(corruptedAccent, a), false)
 	}
 }
 
@@ -1306,6 +1390,7 @@ func (g *Game) drawOverlayHUD(screen *ebiten.Image) {
 	if g.level.announceTimer > 0 && g.level.announce != "" {
 		label(screen, g.level.announce, ScreenWidth/2-len(g.level.announce)*3, 70)
 	}
+	g.drawCorruptionAnnounce(screen)
 
 	if g.state == statePaused {
 		const pw, ph = 140, 92
@@ -1424,7 +1509,7 @@ func (g *Game) reachedLabel() string {
 		return "Sobrevivencia - " + itoa(g.elapsedTicks/60) + "s"
 	}
 	if g.boss != nil {
-		return "Chefe: Vharak"
+		return "Chefe: " + g.boss.name()
 	}
 	if g.stageIndex < len(g.stages) {
 		return g.stages[g.stageIndex].name
@@ -1443,6 +1528,9 @@ func (g *Game) drawGameOver(screen *ebiten.Image) {
 		"Abates: " + itoa(g.enemiesDefeated),
 		"Max combo: x" + itoa(g.maxMult),
 	}
+	stats = append(stats,
+		"Corrupcao: "+itoa(g.corruption.percent())+"%",
+		"Fugas: "+itoa(g.corruption.escaped))
 	for i, s := range stats {
 		drawTextCentered(screen, s, float64(72+i*18), uiInk)
 	}
@@ -1453,13 +1541,17 @@ func (g *Game) drawVictory(screen *ebiten.Image) {
 	g.drawStarsBackground(screen)
 	const margin = 12
 	drawUIPanel(screen, margin, 22, ScreenWidth-2*margin, 240)
-	drawCentered(screen, "FASE CONCLUIDA!", 36)
+	title := "FASE CONCLUIDA!"
+	if g.boss != nil && g.boss.ascended {
+		title = "VALDORIA CAIU"
+	}
+	drawCentered(screen, title, 36)
 	stats := []string{
 		"Pontos: " + itoa(g.score),
 		"Bonus vidas: " + itoa(g.victoryLifeBonus),
-		"Bonus bombas: " + itoa(g.victoryBombBonus),
 		"Tempo: " + itoa(g.victoryTime) + "s",
 		"Abates: " + itoa(g.enemiesDefeated),
+		"Corrupcao: " + itoa(g.corruption.percent()) + "% " + g.corruption.tierName(),
 	}
 	for i, s := range stats {
 		drawTextCentered(screen, s, float64(62+i*18), uiInk)
@@ -1544,7 +1636,7 @@ func (g *Game) drawBossHUD(screen *ebiten.Image) {
 		if (b.tick/16)%2 == 0 {
 			drawCentered(screen, "! ALERTA !", ScreenHeight/2-14)
 		}
-		drawTextCentered(screen, "VHARAK, O DRAGAO CORROMPIDO", ScreenHeight/2, uiHighlight)
+		drawTextCentered(screen, b.name(), ScreenHeight/2, uiHighlight)
 		return
 	}
 
@@ -1608,8 +1700,11 @@ func (g *Game) drawHUD(screen *ebiten.Image) {
 	if g.mode == modeSurvival {
 		name = "SOBREV " + itoa(g.elapsedTicks/60) + "s"
 	}
-	labelRight(screen, name, ScreenWidth-6, 10)
+	labelBlockRight(screen,
+		[]string{name, "CORR " + itoa(g.corruption.percent()) + "%"},
+		ScreenWidth-6, 10)
 
+	g.drawCorruptionBar(screen)
 	g.drawHealthBar(screen)
 	labelBlock(screen, []string{
 		"VIDAS " + itoa(g.lives),
@@ -1621,7 +1716,30 @@ func (g *Game) drawHUD(screen *ebiten.Image) {
 		bottomRight = append(bottomRight, "ESCUDO")
 	}
 	bottomRight = append(bottomRight, weaponName(g.player.weapon)+" Nv"+itoa(g.player.weaponLevel))
-	labelBlockRight(screen, bottomRight, ScreenWidth-6, ScreenHeight-16-12*(len(bottomRight)-1))
+	top := ScreenHeight - 16 - 12*(len(bottomRight)-1)
+	labelBlockRight(screen, bottomRight, ScreenWidth-6, top)
+	g.drawWeaponCharge(screen)
+}
+
+// drawWeaponCharge mostra o progresso rumo ao próximo nível de arma como
+// marcas acima do nome da magia. Sem isso, exigir duas runas por nível tiraria
+// recompensa do jogador em vez de espalhá-la pela partida.
+func (g *Game) drawWeaponCharge(screen *ebiten.Image) {
+	if g.player.weaponLevel >= maxWeaponLevel {
+		return
+	}
+	const pip, gap = 5, 2
+	y := float32(ScreenHeight - 24)
+	width := float32(runesPerLevel*(pip+gap) - gap)
+	x0 := float32(ScreenWidth-6) - width
+	for i := 0; i < runesPerLevel; i++ {
+		c := color.RGBA{0x2a, 0x24, 0x18, 0xc0}
+		if i < g.player.weaponCharge {
+			c = weaponColor(g.player.weapon)
+		}
+		x := x0 + float32(i*(pip+gap))
+		vector.DrawFilledRect(screen, x, y, pip, 2, c, false)
+	}
 }
 
 // drawProgressBar desenha a barra de avanço da fase e marca o início de cada
@@ -1640,6 +1758,53 @@ func (g *Game) drawProgressBar(screen *ebiten.Image) {
 		x := float32(float64(s.startTick) / float64(g.level.duration) * ScreenWidth)
 		vector.DrawFilledRect(screen, x, 0, 1, barH, color.RGBA{0x10, 0x10, 0x18, 0xff}, false)
 	}
+}
+
+// drawCorruptionBar desenha o Medidor de Corrupção como uma coluna vertical na
+// borda direita: o reino "enchendo" de baixo para cima.
+//
+// A posição é deliberada. A corrupção é a mecânica central do jogo e precisa
+// estar sempre visível, mas não pode competir com o campo de tiro — uma coluna
+// de 4px na borda fica no campo periférico, onde o olho registra a mudança sem
+// desviar da ação.
+func (g *Game) drawCorruptionBar(screen *ebiten.Image) {
+	const w = 4
+	const top = 44
+	bottom := float32(ScreenHeight - 52)
+	x := float32(ScreenWidth - w - 1)
+	height := bottom - top
+
+	vector.DrawFilledRect(screen, x, top, w, height, color.RGBA{0x0c, 0x08, 0x14, 0xc0}, false)
+	vector.StrokeRect(screen, x, top, w, height, 1, withAlpha(uiChipEdge, 110), false)
+
+	if r := g.corruption.ratio(); r > 0 {
+		fillH := height * float32(r)
+		c := g.corruption.barColor()
+		if g.corruption.pulse > 0 { // clarão curto a cada fuga
+			c = brighten(c, 70)
+		}
+		vector.DrawFilledRect(screen, x+1, bottom-fillH, w-2, fillH, c, false)
+	}
+
+	// Marcas das faixas, para o jogador antecipar quando o mundo vai piorar.
+	tick := color.RGBA{0xf0, 0xe8, 0xcf, 0x70}
+	for t := tierShadow; t < corruptionTierCount; t++ {
+		y := bottom - height*float32(corruptionTable[t].min/maxCorruption)
+		vector.DrawFilledRect(screen, x, y, w, 1, tick, false)
+	}
+}
+
+// drawCorruptionAnnounce anuncia a mudança de faixa no centro da tela. É o
+// momento em que o jogador entende que o mundo mudou por causa dele.
+func (g *Game) drawCorruptionAnnounce(screen *ebiten.Image) {
+	c := &g.corruption
+	if c.announceTimer <= 0 || c.announce == "" {
+		return
+	}
+	if (c.announceTimer/10)%2 == 0 {
+		drawTextCentered(screen, "O REINO SE CORROMPE", ScreenHeight/2-24, uiInkDim)
+	}
+	drawTextCentered(screen, c.announce, ScreenHeight/2-10, c.barColor())
 }
 
 // drawHealthBar mostra os pontos de vida como pequenos blocos, no rodapé à

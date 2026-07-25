@@ -33,7 +33,9 @@ func TestBulletKillGrantsScore(t *testing.T) {
 	crow := newCrow(100)
 	crow.x, crow.y = 100, 100
 	g.enemies = append(g.enemies, crow)
-	g.bullets = append(g.bullets, newBullet(crow.x, crow.y, 0, -1, 1, 0, lightColor))
+	// Dano suficiente para abater: o corvo deixou de morrer com 1 de dano
+	// quando a vida dos inimigos foi recalibrada.
+	g.bullets = append(g.bullets, newBullet(crow.x, crow.y, 0, -1, crow.health, 0, lightColor))
 
 	g.handleCollisions()
 

@@ -239,8 +239,8 @@ func newLevelFromStage(def *stageDef) *Level {
 	for _, wd := range def.waves {
 		l.events = append(l.events, &waveEvent{
 			startTick: wd.startTick, kind: wd.kind,
-			count:    scaleWaveCount(wd.count),
-			interval: scaleWaveInterval(wd.interval),
+			count:     scaleWaveCount(wd.count),
+			interval:  scaleWaveInterval(wd.interval),
 			formation: wd.formation, spawnX: wd.spawnX,
 			fromLeft: wd.fromLeft, hasDrop: wd.hasDrop, drop: wd.drop,
 		})

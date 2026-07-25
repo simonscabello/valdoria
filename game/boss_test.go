@@ -3,7 +3,7 @@ package game
 import "testing"
 
 func combatBoss() *Boss {
-	b := newBoss()
+	b := newBoss(false)
 	b.phase = bossPhase1
 	b.invulnerable = false
 	return b
@@ -52,7 +52,7 @@ func TestBossPatternSelectionCycles(t *testing.T) {
 }
 
 func TestBossInvulnerableDuringEntry(t *testing.T) {
-	b := newBoss()
+	b := newBoss(false)
 	if !b.invulnerable {
 		t.Fatal("o chefe deveria entrar invulnerável")
 	}
@@ -102,7 +102,8 @@ func TestBossDefeatTransitionsToVictory(t *testing.T) {
 	if g.state != stateVictory {
 		t.Errorf("derrotar o chefe deveria levar à vitória, estado %d", g.state)
 	}
-	expected := bossScore + g.lives*lifeBonus + g.bombCharges*bombBonusPoints
+	// Não há bônus por bomba não usada: guardar cargas não pode render pontos.
+	expected := bossScore + g.lives*lifeBonus
 	if g.score != before+expected {
 		t.Errorf("vitória deveria conceder %d pontos, deu %d", expected, g.score-before)
 	}

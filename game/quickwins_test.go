@@ -53,7 +53,7 @@ func TestScorePopupSpawnsOnKillAndResets(t *testing.T) {
 	e := newCrow(100)
 	e.x, e.y = 100, 100
 	g.enemies = append(g.enemies, e)
-	g.bullets = append(g.bullets, newBullet(100, 100, 0, -1, 1, 0, lightColor))
+	g.bullets = append(g.bullets, newBullet(100, 100, 0, -1, e.health, 0, lightColor))
 
 	g.bulletEnemyCollisions()
 

@@ -5,10 +5,16 @@ import (
 	"testing"
 )
 
+// collectRunes entrega n runas de um elemento ao jogador.
+func collectRunes(p *Player, w weaponType, n int) {
+	for i := 0; i < n; i++ {
+		p.gainWeapon(w)
+	}
+}
+
 func TestWeaponSwitchKeepsLevel(t *testing.T) {
 	p := newPlayer()
-	p.gainWeapon(weaponLight) // Nv2
-	p.gainWeapon(weaponLight) // Nv3
+	collectRunes(p, weaponLight, 2*runesPerLevel) // Nv1 -> Nv3
 	if p.weaponLevel != maxWeaponLevel {
 		t.Fatalf("nível = %d, quero %d", p.weaponLevel, maxWeaponLevel)
 	}
@@ -22,18 +28,17 @@ func TestWeaponSwitchKeepsLevel(t *testing.T) {
 	}
 }
 
-// A runa de uma arma diferente troca o tipo mantendo o nível atual (nunca é uma
-// perda de poder), enquanto a runa da arma equipada continua subindo o nível.
+// Trocar de elemento nunca rebaixa o poder e nunca desperdiça a runa: o nível e
+// a carga são uma potência compartilhada entre as três magias.
 func TestWeaponSwitchAtLowLevelPreservesLevel(t *testing.T) {
 	p := newPlayer() // Luz Nv1
 	p.gainWeapon(weaponFlame)
 	if p.weapon != weaponFlame || p.weaponLevel != 1 {
 		t.Fatalf("trocar no nível 1 deveria manter Nv1, foi arma %d nível %d", p.weapon, p.weaponLevel)
 	}
-	p.gainWeapon(weaponFlame) // mesma arma -> sobe
-	p.gainWeapon(weaponFlame) // mesma arma -> sobe (cap)
+	collectRunes(p, weaponFlame, 2*runesPerLevel-1) // completa até o máximo
 	if p.weaponLevel != maxWeaponLevel {
-		t.Fatalf("mesma runa deveria subir até o máximo, foi %d", p.weaponLevel)
+		t.Fatalf("as runas deveriam subir até o máximo, foi %d", p.weaponLevel)
 	}
 	p.gainWeapon(weaponLight) // troca de volta mantendo o nível alto
 	if p.weapon != weaponLight || p.weaponLevel != maxWeaponLevel {
@@ -41,13 +46,45 @@ func TestWeaponSwitchAtLowLevelPreservesLevel(t *testing.T) {
 	}
 }
 
+// Toda runa elemental avança a carga, mesmo alternando de elemento — caso
+// contrário a progressão trava, porque as runas garantidas alternam de propósito.
+func TestMixedRunesStillProgress(t *testing.T) {
+	p := newPlayer()
+	elements := []weaponType{weaponLight, weaponFlame, weaponIce}
+	for i := 0; i < runesPerLevel; i++ {
+		p.gainWeapon(elements[i%len(elements)])
+	}
+	if p.weaponLevel != 2 {
+		t.Errorf("runas alternadas deveriam subir de nível: nível %d, quero 2", p.weaponLevel)
+	}
+}
+
 func TestWeaponLevelIncreasesAndCaps(t *testing.T) {
 	p := newPlayer()
-	for i := 0; i < 5; i++ {
-		p.gainWeapon(weaponLight)
-	}
+	collectRunes(p, weaponLight, 5*runesPerLevel)
 	if p.weaponLevel != maxWeaponLevel {
 		t.Errorf("nível = %d, quero %d (limite)", p.weaponLevel, maxWeaponLevel)
+	}
+	if p.weaponCharge != 0 {
+		t.Errorf("no teto de poder a carga não deveria acumular, foi %d", p.weaponCharge)
+	}
+}
+
+// Cada runa avança a carga visível no HUD: exigir várias runas por nível sem
+// mostrar progresso tiraria recompensa em vez de espalhá-la pela partida.
+func TestWeaponChargeAccumulates(t *testing.T) {
+	p := newPlayer()
+	if p.weaponCharge != 0 {
+		t.Fatal("sem runas coletadas a carga deveria ser zero")
+	}
+	p.gainWeapon(weaponLight)
+	if p.weaponCharge != 1 {
+		t.Fatalf("uma runa deveria acumular uma carga, foi %d", p.weaponCharge)
+	}
+	collectRunes(p, weaponLight, runesPerLevel-1)
+	if p.weaponLevel != 2 || p.weaponCharge != 0 {
+		t.Fatalf("completar a carga deveria subir de nível e zerar: nível %d, carga %d",
+			p.weaponLevel, p.weaponCharge)
 	}
 }
 
@@ -152,13 +189,14 @@ func TestFanAnglesAreSymmetric(t *testing.T) {
 }
 
 func TestWeaponBalanceIdentities(t *testing.T) {
-	// Chamas Nv3: leque fechado (não varre a tela) e cadência abaixo da Luz.
+	// Chamas Nv3: leque denso e ainda contido (não varre a tela), com cadência
+	// abaixo da Luz.
 	flame := fireFlame(3, 120, 200)
-	if len(flame) != 5 {
-		t.Fatalf("chamas Nv3: %d tiros, quero 5", len(flame))
+	if len(flame) != flameCountMax {
+		t.Fatalf("chamas Nv3: %d tiros, quero %d", len(flame), flameCountMax)
 	}
-	if flameSpread > 0.65 {
-		t.Fatalf("leque de chamas ainda largo demais: %v", flameSpread)
+	if flameSpreadWide > 0.9 {
+		t.Fatalf("leque de chamas ainda largo demais: %v", flameSpreadWide)
 	}
 	if weaponCooldown(weaponFlame, 3) <= weaponCooldown(weaponLight, 3) {
 		t.Fatalf("chamas Nv3 não deveria atirar mais rápido que a luz")
@@ -172,8 +210,11 @@ func TestWeaponBalanceIdentities(t *testing.T) {
 	if light[0].damage <= flameBulletDamage {
 		t.Fatalf("luz deveria ferir mais que cada chama (%d vs %d)", light[0].damage, flameBulletDamage)
 	}
-	if light[0].pierce < 1 {
-		t.Fatal("luz Nv3 deveria perfurar")
+	// A perfuração é a identidade exclusiva do Gelo. Quando a Luz também
+	// perfurava, ela vencia o cenário de coluna além do de foco e não sobrava
+	// motivo para escolher outra magia.
+	if light[0].pierce != 0 {
+		t.Fatalf("a luz não deveria perfurar (identidade do gelo), pierce = %d", light[0].pierce)
 	}
 
 	// Gelo: alto dano + perfuração.

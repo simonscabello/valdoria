@@ -18,17 +18,18 @@ var (
 )
 
 type Player struct {
-	x, y        float64
-	health      int
-	cooldown    int
-	invincible  int
-	muzzleFlash int
-	precision   bool
-	weapon      weaponType
-	weaponLevel int
-	shieldTimer int
-	wingPhase   float64
-	tilt        float64
+	x, y         float64
+	health       int
+	cooldown     int
+	invincible   int
+	muzzleFlash  int
+	precision    bool
+	weapon       weaponType
+	weaponLevel  int
+	weaponCharge int // runas acumuladas rumo ao próximo nível
+	shieldTimer  int
+	wingPhase    float64
+	tilt         float64
 }
 
 func newPlayer() *Player {
@@ -142,16 +143,25 @@ func (p *Player) applyPowerup(kind powerupType) {
 	}
 }
 
-// gainWeapon aplica uma runa de arma. Trocar de arma nunca rebaixa o poder: o
-// nível atual é preservado ao trocar (o nível funciona como uma potência
-// compartilhada), e coletar a runa da arma já equipada sobe um nível até o
-// máximo. Assim, todo power-up é desejável — nunca uma armadilha a ser evitada.
+// gainWeapon aplica uma runa de arma.
+//
+// Regra única: **toda runa elemental equipa aquele elemento e avança a carga.**
+// A cada runesPerLevel runas o nível sobe, até o máximo. O nível e a carga são
+// uma potência compartilhada entre as três magias, então trocar de elemento
+// nunca rebaixa nem desperdiça — o jogador escolhe *como* lutar sem pagar por
+// isso, que é o oposto do design original (onde trocar zerava o nível).
+//
+// Exigir carga só do elemento equipado foi testado e travava a progressão: as
+// runas garantidas alternam de propósito, e o jogador quase nunca recebia duas
+// seguidas do mesmo elemento.
 func (p *Player) gainWeapon(w weaponType) {
-	if p.weapon != w {
-		p.weapon = w
+	p.weapon = w
+	if p.weaponLevel >= maxWeaponLevel {
 		return
 	}
-	if p.weaponLevel < maxWeaponLevel {
+	p.weaponCharge++
+	if p.weaponCharge >= runesPerLevel {
+		p.weaponCharge = 0
 		p.weaponLevel++
 	}
 }
@@ -171,7 +181,7 @@ func (p *Player) canBeHit() bool {
 
 // hit aplica dano e devolve true apenas quando a vida realmente diminuiu.
 func (p *Player) hit(damage int) bool {
-	p.invincible = invincibilityDuration
+	p.invincible = scaledInvincibility(invincibilityDuration)
 	if p.shieldTimer > 0 {
 		p.shieldTimer = 0
 		return false
@@ -180,14 +190,18 @@ func (p *Player) hit(damage int) bool {
 	return true
 }
 
-// respawn recoloca o jogador em área segura, restaura a vida, concede
+// respawn recoloca o jogador em área segura, restaura a vida inicial, concede
 // invencibilidade e reduz apenas um nível da arma atual.
+//
+// A vida volta a initialHealth, e não a maxHealth: restaurar 5 pontos quando a
+// partida começa com 3 fazia de morrer uma forma de *ganhar* vida.
 func (p *Player) respawn() {
 	p.x = ScreenWidth/2 - playerSize/2
 	p.y = ScreenHeight - playerSize*3
-	p.health = maxHealth
+	p.health = initialHealth
 	p.invincible = respawnInvincibility
 	p.shieldTimer = 0
+	p.weaponCharge = 0
 	if p.weaponLevel > 1 {
 		p.weaponLevel--
 	}

@@ -44,8 +44,10 @@ func TestRespawnReducesWeaponAndRestoresHealth(t *testing.T) {
 
 	p.respawn()
 
-	if p.health != maxHealth {
-		t.Errorf("respawn deveria restaurar a vida ao máximo, foi %d", p.health)
+	// A vida volta ao valor inicial, não ao máximo: morrer não pode ser uma
+	// forma de ganhar vida.
+	if p.health != initialHealth {
+		t.Errorf("respawn deveria restaurar a vida inicial (%d), foi %d", initialHealth, p.health)
 	}
 	if p.weaponLevel != 2 {
 		t.Errorf("respawn deveria reduzir um nível de arma, foi %d", p.weaponLevel)

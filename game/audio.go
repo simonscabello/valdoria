@@ -51,6 +51,8 @@ const (
 	sfxGameOver
 	sfxShield
 	sfxMenu
+	sfxEscape
+	sfxCorruption
 	sfxCount
 )
 
@@ -163,6 +165,8 @@ func (a *AudioManager) buildLibrary() {
 	a.sfx[sfxGameOver] = a.loadSFX("game_over", genGameOver)
 	a.sfx[sfxShield] = a.loadSFX("shield_break", genShieldBreak)
 	a.sfx[sfxMenu] = a.loadSFX("menu", genMenuBlip)
+	a.sfx[sfxEscape] = a.loadSFX("escape", genEscape)
+	a.sfx[sfxCorruption] = a.loadSFX("corruption", genCorruption)
 
 	a.music[musicMenu] = a.loadMusic("music_menu", genMusicMenu)
 	a.music[musicPhase] = a.loadMusic("music_phase", genMusicPhase)
@@ -540,6 +544,22 @@ func genShieldBreak(sr int) []float64 {
 // genMenuBlip: bipe curtíssimo para navegação/confirmação de menu.
 func genMenuBlip(sr int) []float64 {
 	return synth(sr, 660, 660, 0.045, 0.22, waveSine, 0.05, 0.5)
+}
+
+// genEscape: descida grave e curta — o som de algo passando por você. É de
+// propósito desconfortável: o jogador precisa registrar cada fuga.
+func genEscape(sr int) []float64 {
+	tone := synth(sr, 300, 120, 0.16, 0.22, waveSine, 0.02, 0.7)
+	noise := synth(sr, 0, 0, 0.10, 0.08, waveNoise, 0.02, 0.8)
+	return mix(tone, noise)
+}
+
+// genCorruption: acorde grave e sujo ao subir de faixa — o reino piorando.
+func genCorruption(sr int) []float64 {
+	low := synth(sr, 160, 70, 0.55, 0.34, waveSquare, 0.02, 0.5)
+	grind := synth(sr, 0, 0, 0.45, 0.16, waveNoise, 0.05, 0.6)
+	wail := synth(sr, 420, 300, 0.50, 0.16, waveSine, 0.15, 0.5)
+	return mix(mix(low, grind), wail)
 }
 
 // sequence encadeia notas (freq, duração) formando um laço curto de música.

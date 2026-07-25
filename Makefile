@@ -4,7 +4,7 @@ BIN_DIR := bin
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all run dev test build build-linux build-windows build-all fmt vet clean
+.PHONY: all run dev test balance build build-linux build-windows build-all fmt vet clean
 
 all: build
 
@@ -19,6 +19,10 @@ dev:
 ## test: roda todos os testes
 test:
 	go test ./...
+
+## balance: relatório de balanceamento (headless, sem janela)
+balance:
+	@go run ./cmd/balance 2>/dev/null
 
 ## build: compila para o sistema atual em bin/
 build:

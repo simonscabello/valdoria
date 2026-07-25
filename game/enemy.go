@@ -31,14 +31,21 @@ type enemyBehavior interface {
 }
 
 type Enemy struct {
-	kind        enemyKind
-	x, y        float64
-	w, h        float64
-	health      int
-	score       int
-	damage      int
-	dead        bool
-	escaped     bool
+	kind    enemyKind
+	x, y    float64
+	w, h    float64
+	health  int
+	score   int
+	damage  int
+	dead    bool
+	escaped bool
+	// escapedBottom distingue a **falha do jogador** (o inimigo atravessou a
+	// base do reino) das saídas laterais, que são parte do design de alguns
+	// comportamentos — a gárgula entra por um lado e sai pelo outro. Só a
+	// primeira corrompe o reino.
+	escapedBottom bool
+	// mutated marca a variante corrompida, gerada em corrupção alta.
+	mutated     bool
 	hitFlash    int
 	telegraph   int
 	hasDrop     bool
@@ -50,11 +57,11 @@ type Enemy struct {
 	animTick    int
 
 	// Status elementais.
-	slow      int     // frames restantes de gelo
-	slowSkip  float64 // acumulador para rodar behavior a iceSlowFactor
-	burn      int
-	burnTick  int
-	stun      int
+	slow     int     // frames restantes de gelo
+	slowSkip float64 // acumulador para rodar behavior a iceSlowFactor
+	burn     int
+	burnTick int
+	stun     int
 }
 
 func (e *Enemy) update(ctx *enemyContext) {
@@ -113,6 +120,18 @@ func (e *Enemy) offScreen() bool {
 		e.y < -e.h-margin || e.y > ScreenHeight+margin
 }
 
+// crossedBottom indica que o inimigo atravessou a base da tela — a única saída
+// que conta como falha do jogador e corrompe o reino.
+func (e *Enemy) crossedBottom() bool {
+	return e.y > ScreenHeight
+}
+
+// aboutToEscape é verdadeiro quando o inimigo está prestes a cruzar a base.
+// Usado para avisar o jogador antes que a corrupção suba.
+func (e *Enemy) aboutToEscape() bool {
+	return e.y+e.h > ScreenHeight-escapeWarningBand
+}
+
 func (e *Enemy) draw(screen *ebiten.Image) {
 	e.drawStatusAura(screen)
 
@@ -136,7 +155,14 @@ func (e *Enemy) draw(screen *ebiten.Image) {
 	// Escala sempre pelo frame base, para a batida de asa não pulsar o tamanho.
 	if sw, sh, ok := spriteBounds(base); ok {
 		scale := math.Max(e.w/float64(sw), e.h/float64(sh)) * 1.1
-		drawSprite(screen, name, e.centerX(), e.centerY()+bob, scale, false, 0, e.hitFlash > 0)
+		var tint *color.RGBA
+		if e.mutated {
+			tint = &mutatedTint // a variante corrompida reusa a arte, tingida
+		}
+		drawSpriteTinted(screen, name, e.centerX(), e.centerY()+bob, scale, false, 0, e.hitFlash > 0, tint)
+		if e.mutated {
+			e.drawCorruptedAura(screen)
+		}
 		return
 	}
 
@@ -251,7 +277,7 @@ func newHarpy(x float64) *Enemy {
 		damage:   harpyDamage,
 		color:    color.RGBA{0x3a, 0xb0, 0x9e, 0xff},
 		accent:   color.RGBA{0xe0, 0xe0, 0xf0, 0xff},
-		behavior: &harpyBehavior{baseX: x, fireCD: harpyFireInterval},
+		behavior: &harpyBehavior{baseX: x, fireCD: scaledFireInterval(harpyFirstFire)},
 	}
 }
 
@@ -287,7 +313,7 @@ func newWyvern(x float64) *Enemy {
 		damage:   wyvernDamage,
 		color:    color.RGBA{0x4a, 0x8a, 0x3a, 0xff},
 		accent:   color.RGBA{0x2a, 0x5a, 0x22, 0xff},
-		behavior: &wyvernBehavior{fireCD: wyvernFireInterval},
+		behavior: &wyvernBehavior{fireCD: scaledFireInterval(wyvernFirstFire)},
 	}
 }
 
@@ -303,7 +329,7 @@ func newBallista(x float64) *Enemy {
 		damage:   ballistaDamage,
 		color:    color.RGBA{0x6a, 0x52, 0x36, 0xff},
 		accent:   color.RGBA{0x3a, 0x2c, 0x1c, 0xff},
-		behavior: &ballistaBehavior{fireCD: ballistaFireInterval},
+		behavior: &ballistaBehavior{fireCD: scaledFireInterval(ballistaFirstFire)},
 	}
 }
 
@@ -319,7 +345,7 @@ func newMage(x float64) *Enemy {
 		damage:   mageDamage,
 		color:    color.RGBA{0x7a, 0x3a, 0xb0, 0xff},
 		accent:   color.RGBA{0xd0, 0xa0, 0xff, 0xff},
-		behavior: &mageBehavior{baseX: x, fireCD: mageFireInterval},
+		behavior: &mageBehavior{baseX: x, fireCD: scaledFireInterval(mageFirstFire)},
 	}
 }
 
@@ -334,20 +360,26 @@ func (b *crowBehavior) update(e *Enemy, _ *enemyContext) {
 
 // Harpia: desce em zigue-zague e dispara para baixo em intervalos regulares.
 type harpyBehavior struct {
-	baseX  float64
-	phase  float64
-	fireCD int
+	baseX float64
+	phase float64
+	// speedMul acelera a variante corrompida (1 = harpia comum).
+	speedMul float64
+	fireCD   int
 }
 
 func (b *harpyBehavior) update(e *Enemy, ctx *enemyContext) {
-	b.phase += harpyFreq
-	e.y += harpySpeed
+	mul := b.speedMul
+	if mul <= 0 {
+		mul = 1
+	}
+	b.phase += harpyFreq * mul
+	e.y += harpySpeed * mul
 	e.x = b.baseX + math.Sin(b.phase)*harpyAmplitude
 
 	b.fireCD--
 	aimTelegraph(e, b.fireCD)
 	if b.fireCD <= 0 {
-		b.fireCD = harpyFireInterval
+		b.fireCD = scaledFireInterval(harpyFireInterval)
 		*ctx.bullets = append(*ctx.bullets, newEnemyBullet(e.centerX(), e.y+e.h, 0, enemyBulletSpeed))
 	}
 }
@@ -391,7 +423,7 @@ func (b *gargoyleBehavior) update(e *Enemy, ctx *enemyContext) {
 		b.fireCD--
 		aimTelegraph(e, b.fireCD)
 		if b.fireCD <= 0 {
-			b.fireCD = gargoyleFireInterval
+			b.fireCD = scaledFireInterval(gargoyleFireInterval)
 			*ctx.bullets = append(*ctx.bullets, newEnemyBullet(e.centerX(), e.y+e.h, 0, enemyBulletSpeed))
 		}
 		if b.attackTimer <= 0 {
@@ -410,6 +442,8 @@ func (b *gargoyleBehavior) update(e *Enemy, ctx *enemyContext) {
 // mirados na posição do jogador no instante do disparo.
 type wyvernBehavior struct {
 	fireCD int
+	// fan > 1 faz a variante corrompida disparar um leque em vez de um tiro.
+	fan int
 }
 
 func (b *wyvernBehavior) update(e *Enemy, ctx *enemyContext) {
@@ -424,10 +458,22 @@ func (b *wyvernBehavior) update(e *Enemy, ctx *enemyContext) {
 
 	b.fireCD--
 	aimTelegraph(e, b.fireCD)
-	if b.fireCD <= 0 {
-		b.fireCD = wyvernFireInterval
-		vx, vy := aimVelocity(e.centerX(), e.y+e.h, ctx.playerX, ctx.playerY, enemyBulletSpeed)
+	if b.fireCD > 0 {
+		return
+	}
+	b.fireCD = scaledFireInterval(wyvernFireInterval)
+	vx, vy := aimVelocity(e.centerX(), e.y+e.h, ctx.playerX, ctx.playerY, enemyBulletSpeed)
+	if b.fan <= 1 {
 		*ctx.bullets = append(*ctx.bullets, newEnemyBullet(e.centerX(), e.y+e.h, vx, vy))
+		return
+	}
+	// Variante corrompida: abre a mira num leque ao redor da direção do jogador.
+	base := math.Atan2(vy, vx)
+	for _, off := range fanAngles(b.fan, rotWyvernSpread) {
+		a := base + off
+		*ctx.bullets = append(*ctx.bullets, newEnemyBullet(
+			e.centerX(), e.y+e.h,
+			math.Cos(a)*enemyBulletSpeed, math.Sin(a)*enemyBulletSpeed))
 	}
 }
 
@@ -456,7 +502,7 @@ func (b *ballistaBehavior) update(e *Enemy, ctx *enemyContext) {
 	b.fireCD--
 	aimTelegraph(e, b.fireCD)
 	if b.fireCD <= 0 {
-		b.fireCD = ballistaFireInterval
+		b.fireCD = scaledFireInterval(ballistaFireInterval)
 		b.burstLeft = ballistaBurst
 		b.burstCD = 0
 	}
@@ -481,7 +527,7 @@ func (b *mageBehavior) update(e *Enemy, ctx *enemyContext) {
 	b.fireCD--
 	aimTelegraph(e, b.fireCD)
 	if b.fireCD <= 0 {
-		b.fireCD = mageFireInterval
+		b.fireCD = scaledFireInterval(mageFireInterval)
 		for i := 0; i < mageRingCount; i++ {
 			a := float64(i) / float64(mageRingCount) * 2 * math.Pi
 			vx := math.Sin(a) * mageBulletSpeed

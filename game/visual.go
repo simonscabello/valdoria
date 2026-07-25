@@ -37,9 +37,11 @@ const (
 	shakeHitMagnitude  = 2.0
 	shakeBombMagnitude = 6.0
 	shakeBossMagnitude = 4.5
-	shakeDecay         = 0.86
-	shakeMaxOffset     = 5.0
-	shakeMinMagnitude  = 0.15
+	// Subir de faixa de corrupção é um evento de mundo: sacode mais que um dano.
+	shakeCorruptionMagnitude = 5.0
+	shakeDecay               = 0.86
+	shakeMaxOffset           = 5.0
+	shakeMinMagnitude        = 0.15
 
 	// Flash discreto ao receber dano.
 	damageFlashDuration = 12
@@ -196,6 +198,57 @@ var (
 		style:     styleVillageFire,
 	}
 )
+
+// corrupted devolve o tema degradado pela corrupção: o mundo perde saturação e
+// escorrega para o violeta doente.
+//
+// A regra do guia de arte é preservada — o cenário nunca ganha saturação, só
+// perde. Assim a leitura das entidades (que são saturadas e contornadas) fica
+// *melhor* conforme o reino piora, e não pior.
+func (t bgTheme) corrupted(ratio float64) bgTheme {
+	if ratio <= 0 {
+		return t
+	}
+	if ratio > 1 {
+		ratio = 1
+	}
+	t.sky = corruptColor(t.sky, ratio)
+	t.cloud = corruptColor(t.cloud, ratio)
+	t.hill = corruptColor(t.hill, ratio)
+	t.structure = corruptColor(t.structure, ratio)
+	t.accent = corruptColor(t.accent, ratio)
+	t.dust = corruptColor(t.dust, ratio)
+	return t
+}
+
+// corruptRot é o alvo cromático da corrupção: violeta escuro e sem vida.
+var corruptRot = color.RGBA{0x2a, 0x0e, 0x2e, 0xff}
+
+// corruptColor dessatura em direção ao cinza e depois puxa para o violeta,
+// proporcionalmente à corrupção. No máximo, o mundo perde ~55% da sua cor.
+func corruptColor(c color.RGBA, ratio float64) color.RGBA {
+	const maxDrain = 0.55
+	k := ratio * maxDrain
+
+	// Luminância perceptual, para dessaturar sem escurecer demais.
+	lum := 0.299*float64(c.R) + 0.587*float64(c.G) + 0.114*float64(c.B)
+	mix := func(v uint8, target float64) uint8 {
+		return clampByte(int(float64(v)*(1-k) + target*k))
+	}
+	gray := color.RGBA{mix(c.R, lum), mix(c.G, lum), mix(c.B, lum), c.A}
+
+	// Metade da degradação vai para o violeta da corrupção.
+	k2 := ratio * maxDrain * 0.5
+	toward := func(v, target uint8) uint8 {
+		return clampByte(int(float64(v)*(1-k2) + float64(target)*k2))
+	}
+	return color.RGBA{
+		toward(gray.R, corruptRot.R),
+		toward(gray.G, corruptRot.G),
+		toward(gray.B, corruptRot.B),
+		c.A,
+	}
+}
 
 // enemyOutline é o contorno escuro desenhado atrás dos corpos para destacá-los
 // do cenário, reforçando a leitura das silhuetas.

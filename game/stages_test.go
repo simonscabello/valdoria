@@ -29,24 +29,36 @@ func TestStageDurationCoversLastWave(t *testing.T) {
 	}
 }
 
-// stageSpawnCount roda a linha do tempo completa de uma fase e conta quantos
-// inimigos ela gera.
-func stageSpawnCount(def *stageDef) int {
-	l := newLevelFromStage(def)
-	total := 0
-	for i := 0; i <= l.duration; i++ {
-		total += len(l.update())
+// TestStagesAreDense guarda contra regressão de densidade — o problema relatado
+// em playtest foi "poucos monstros / muita espera".
+//
+// A métrica é a **ocupação da tela**, não a contagem bruta de spawns: inimigos
+// pesados (wyvern, feiticeiro, balista) permanecem muito mais tempo em cena que
+// um corvo, então trocar quantidade por variedade reduz os spawns e ainda assim
+// aumenta a densidade percebida. Medir spawns puniria exatamente a correção que
+// tornou a campanha mais variada.
+func TestStagesAreDense(t *testing.T) {
+	const minPeak = 10
+	for _, def := range campaignStages() {
+		m := measureStage(def)
+		if m.PeakOnScreen < minPeak {
+			t.Errorf("fase %q: pico de %d inimigos em cena (mínimo %d); densidade insuficiente",
+				def.name, m.PeakOnScreen, minPeak)
+		}
+		if m.Enemies < 50 {
+			t.Errorf("fase %q gera só %d inimigos; fluxo insuficiente", def.name, m.Enemies)
+		}
 	}
-	return total
 }
 
-func TestStagesAreDense(t *testing.T) {
-	// Guarda contra regressão de densidade: cada fase deve manter um fluxo
-	// contínuo de inimigos (o problema relatado era "poucos monstros").
-	for _, def := range campaignStages() {
-		got := stageSpawnCount(def)
-		if got < 100 {
-			t.Errorf("fase %q gera poucos inimigos (%d); densidade insuficiente", def.name, got)
+// TestBestiaryIsBalanced guarda a composição da campanha: nenhum inimigo pode
+// dominar e nenhum pode ser decorativo. Antes desta revisão, 94,6% da campanha
+// eram corvos e harpias, e os outros quatro somavam 25 aparições.
+func TestBestiaryIsBalanced(t *testing.T) {
+	r := MeasureBalance(diffNormal, 42)
+	for _, c := range Checks(r) {
+		if !c.Pass {
+			t.Errorf("critério de balanceamento não atendido: %s — %s", c.Name, c.Detail)
 		}
 	}
 }

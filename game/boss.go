@@ -61,6 +61,28 @@ var bossPatterns = map[bossPhase][]bossPattern{
 	},
 }
 
+// ascendedPatterns dá ao confronto verdadeiro um repertório maior por fase: o
+// jogador que corrompeu o reino enfrenta um dragão que aprendeu mais golpes.
+var ascendedPatterns = map[bossPhase][]bossPattern{
+	bossPhase1: {
+		{kind: patternAimedFire, duration: 90, cooldown: 40, interval: 14},
+		{kind: patternCone, duration: 80, cooldown: 45, interval: 22},
+		{kind: patternArc, duration: 80, cooldown: 45, interval: 24},
+	},
+	bossPhase2: {
+		{kind: patternArc, duration: 100, cooldown: 35, interval: 18},
+		{kind: patternSweep, duration: 90, cooldown: 40, interval: 26},
+		{kind: patternSummon, duration: 70, cooldown: 50, interval: 26},
+		{kind: patternAimedFire, duration: 80, cooldown: 30, interval: 11},
+	},
+	bossPhase3: {
+		{kind: patternSweep, duration: 110, cooldown: 32, interval: 24},
+		{kind: patternCone, duration: 90, cooldown: 28, interval: 13},
+		{kind: patternArc, duration: 90, cooldown: 28, interval: 16},
+		{kind: patternAimedFire, duration: 90, cooldown: 26, interval: 8},
+	},
+}
+
 type weakSpot struct {
 	dx, dy, size float64
 }
@@ -96,6 +118,11 @@ type Boss struct {
 	fireTimer      int
 	crystalsActive bool
 
+	// ascended: o confronto verdadeiro, liberado quando o reino cai por
+	// completo (corrupção 100%). Mais vida, padrões extras e cristais expostos
+	// desde a segunda fase.
+	ascended bool
+
 	justEntered  bool
 	phaseChanged bool
 	justDied     bool
@@ -107,19 +134,55 @@ type Boss struct {
 	stun     int
 }
 
-func newBoss() *Boss {
+// newBoss cria Vharak. Com o reino caído (corrupção máxima), quem aparece é
+// **Vharak Ascendido**: o mesmo dragão alimentado pela corrupção que o jogador
+// deixou crescer. É a recompensa narrativa da aposta — e o motivo para uma
+// segunda run.
+func newBoss(ascended bool) *Boss {
+	hp := bossMaxHealth
+	if ascended {
+		hp = int(float64(hp) * ascendedHealthMul)
+	}
 	return &Boss{
 		x:            ScreenWidth/2 - bossW/2,
 		y:            -bossH,
 		w:            bossW,
 		h:            bossH,
-		health:       bossMaxHealth,
-		maxHealth:    bossMaxHealth,
+		health:       hp,
+		maxHealth:    hp,
 		phase:        bossEntering,
 		invulnerable: true,
 		entryTimer:   bossEntryHold,
 		vx:           1,
+		ascended:     ascended,
 	}
+}
+
+// name devolve como o chefe se apresenta na entrada.
+func (b *Boss) name() string {
+	if b.ascended {
+		return "VHARAK ASCENDIDO"
+	}
+	return "VHARAK, O DRAGAO CORROMPIDO"
+}
+
+// patterns devolve a tabela de padrões da fase atual, já considerando a versão
+// ascendida (que ganha um padrão a mais por fase).
+func (b *Boss) patterns() []bossPattern {
+	if b.ascended {
+		if p, ok := ascendedPatterns[b.phase]; ok {
+			return p
+		}
+	}
+	return bossPatterns[b.phase]
+}
+
+// speedMul acelera o chefe ascendido em todas as fases.
+func (b *Boss) speedMul() float64 {
+	if b.ascended {
+		return ascendedSpeedMul
+	}
+	return 1
 }
 
 func (b *Boss) centerX() float64 { return b.x + b.w/2 }
@@ -233,7 +296,7 @@ func (b *Boss) refreshPhase() {
 	b.action = actionWarning
 	b.actionTimer = bossWarningDuration
 	b.phaseChanged = true
-	if desired == bossPhase3 {
+	if desired == bossPhase3 || (b.ascended && desired == bossPhase2) {
 		b.crystalsActive = true
 	}
 }
@@ -250,7 +313,7 @@ func (b *Boss) speed() float64 {
 }
 
 func (b *Boss) move() {
-	b.x += b.vx * b.speed()
+	b.x += b.vx * b.speed() * b.speedMul()
 	minX := float64(bossMargin)
 	maxX := ScreenWidth - b.w - bossMargin
 	if b.x <= minX {
@@ -264,7 +327,7 @@ func (b *Boss) move() {
 }
 
 func (b *Boss) currentPattern() bossPattern {
-	pats := bossPatterns[b.phase]
+	pats := b.patterns()
 	if len(pats) == 0 {
 		return bossPattern{}
 	}
@@ -294,7 +357,10 @@ func (b *Boss) runActions(ctx *bossContext) {
 }
 
 func (b *Boss) nextPattern() {
-	pats := bossPatterns[b.phase]
+	pats := b.patterns()
+	if len(pats) == 0 {
+		return
+	}
 	b.patternIndex = (b.patternIndex + 1) % len(pats)
 	b.action = actionWarning
 	b.actionTimer = bossWarningDuration

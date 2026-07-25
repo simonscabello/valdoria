@@ -96,10 +96,11 @@ func TestResetRNGReproducesFixedSeed(t *testing.T) {
 
 func TestRandomRuneDeterministicWithSeed(t *testing.T) {
 	t.Cleanup(resetDevState)
+	g := &Game{player: newPlayer()}
 	SetSeed(7)
-	a := []powerupType{randomRune(), randomRune(), randomRune()}
+	a := []powerupType{g.randomRune(), g.randomRune(), g.randomRune()}
 	SetSeed(7)
-	b := []powerupType{randomRune(), randomRune(), randomRune()}
+	b := []powerupType{g.randomRune(), g.randomRune(), g.randomRune()}
 	for i := range a {
 		if a[i] != b[i] {
 			t.Fatalf("randomRune deveria ser determinístico por semente (índice %d)", i)

@@ -30,6 +30,18 @@ func weaponName(w weaponType) string {
 	}
 }
 
+// weaponColor devolve a cor de identidade da magia (HUD, cargas, efeitos).
+func weaponColor(w weaponType) color.RGBA {
+	switch w {
+	case weaponFlame:
+		return flameColor
+	case weaponIce:
+		return iceColor
+	default:
+		return lightColor
+	}
+}
+
 func weaponCooldown(w weaponType, level int) int {
 	switch w {
 	case weaponFlame:
@@ -55,18 +67,15 @@ func fireWeapon(w weaponType, level int, x, topY float64) []*Bullet {
 	}
 }
 
-// Lança de Luz: disparos retos e densos. DPS alto no foco; Nv3 perfura 1 alvo.
+// Lança de Luz: disparos retos e densos, o maior dano focado do jogo.
+// Não perfura — perfuração é a identidade do Gelo — e não aplica status.
 func fireLight(level int, x, topY float64) []*Bullet {
 	speed := lightBulletSpeed
 	if level >= 3 {
 		speed = lightBulletSpeedFast
 	}
-	pierce := 0
-	if level >= 3 {
-		pierce = lightPierceMax
-	}
 	count := 1 + level
-	out := straightSpread(count, x, topY, speed, lightBulletDamage, pierce, lightColor)
+	out := straightSpread(count, x, topY, speed, lightBulletDamage, 0, lightColor)
 	for _, b := range out {
 		b.trail = true
 		b.element = weaponLight
@@ -87,16 +96,23 @@ func weaponShootSFX(w weaponType) soundID {
 }
 
 // Chamas do Dragão: leque curto para cobertura local (não varre a tela inteira).
+// As contagens são sempre ímpares para garantir um tiro central: com 4
+// projéteis o leque abria um vão bem no eixo do jogador e o Nv2 rendia menos
+// que o Nv1 contra alvos alinhados.
 func fireFlame(level int, x, topY float64) []*Bullet {
-	count := 3
+	count := flameCountBase
 	switch {
 	case level >= 3:
-		count = 5
+		count = flameCountMax
 	case level >= 2:
-		count = 4
+		count = flameCountMid
+	}
+	spread := flameSpread
+	if level >= 3 {
+		spread = flameSpreadWide
 	}
 	out := make([]*Bullet, 0, count)
-	for _, angle := range fanAngles(count, flameSpread) {
+	for _, angle := range fanAngles(count, spread) {
 		vx := math.Sin(angle) * flameBulletSpeed
 		vy := -math.Cos(angle) * flameBulletSpeed
 		b := newBullet(x-bulletWidth/2, topY, vx, vy, flameBulletDamage, 0, flameColor)

@@ -1,13 +1,18 @@
 package game
 
 import (
-	"math"
-
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 // applyWeaponHit aplica o efeito elemental do projétil ao inimigo.
+//
+// A Lança de Luz **não** aplica status. Ela atordoava a cada acerto
+// (stunDuration = 32 frames) com um cooldown de 8 frames: qualquer alvo sob
+// fogo contínuo ficava congelado para sempre, inclusive o chefe. Isso apagava
+// o combate e tornava as outras duas armas irrelevantes. A identidade da Luz
+// passou a ser dano focado puro; o atordoamento fica reservado para uma
+// habilidade ativa (o Grito do Grifo).
 func (e *Enemy) applyWeaponHit(element weaponType) {
 	switch element {
 	case weaponIce:
@@ -15,8 +20,6 @@ func (e *Enemy) applyWeaponHit(element weaponType) {
 	case weaponFlame:
 		e.burn = burnDuration
 		e.burnTick = 0
-	case weaponLight:
-		e.stun = stunDuration
 	}
 }
 
@@ -55,6 +58,8 @@ func (e *Enemy) drawStatusAura(screen *ebiten.Image) {
 
 // --- Status no chefe (mesmas identidades das armas) ---
 
+// applyWeaponHit no chefe segue a mesma regra: nenhum atordoamento passivo.
+// Vharak precisa executar seus padrões — é a melhor peça de design do jogo.
 func (b *Boss) applyWeaponHit(element weaponType) {
 	switch element {
 	case weaponIce:
@@ -62,8 +67,6 @@ func (b *Boss) applyWeaponHit(element weaponType) {
 	case weaponFlame:
 		b.burn = burnDuration
 		b.burnTick = 0
-	case weaponLight:
-		b.stun = stunDuration / 2 // atordoamento mais curto no chefe
 	}
 }
 
@@ -98,21 +101,4 @@ func (b *Boss) drawStatusAura(screen *ebiten.Image) {
 	if b.stun > 0 && (b.tick/3)%2 == 0 {
 		vector.StrokeRect(screen, x-1, y-1, w+2, h+2, 1, withAlpha(lightColor, 220), false)
 	}
-}
-
-// lightChainTarget escolhe o inimigo vivo mais próximo de (cx,cy), ignorando skip.
-func lightChainTarget(enemies []*Enemy, cx, cy float64, skip *Enemy) *Enemy {
-	var best *Enemy
-	bestDist := float64(lightChainRange)
-	for _, e := range enemies {
-		if e == nil || e.dead || e == skip {
-			continue
-		}
-		d := math.Hypot(e.centerX()-cx, e.centerY()-cy)
-		if d <= bestDist {
-			bestDist = d
-			best = e
-		}
-	}
-	return best
 }
