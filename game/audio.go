@@ -53,6 +53,8 @@ const (
 	sfxMenu
 	sfxEscape
 	sfxCorruption
+	sfxDive
+	sfxGraze
 	sfxCount
 )
 
@@ -167,6 +169,8 @@ func (a *AudioManager) buildLibrary() {
 	a.sfx[sfxMenu] = a.loadSFX("menu", genMenuBlip)
 	a.sfx[sfxEscape] = a.loadSFX("escape", genEscape)
 	a.sfx[sfxCorruption] = a.loadSFX("corruption", genCorruption)
+	a.sfx[sfxDive] = a.loadSFX("dive", genDive)
+	a.sfx[sfxGraze] = a.loadSFX("graze", genGraze)
 
 	a.music[musicMenu] = a.loadMusic("music_menu", genMusicMenu)
 	a.music[musicPhase] = a.loadMusic("music_phase", genMusicPhase)
@@ -560,6 +564,19 @@ func genCorruption(sr int) []float64 {
 	grind := synth(sr, 0, 0, 0.45, 0.16, waveNoise, 0.05, 0.6)
 	wail := synth(sr, 420, 300, 0.50, 0.16, waveSine, 0.15, 0.5)
 	return mix(mix(low, grind), wail)
+}
+
+// genDive: grito curto e ascendente do grifo ao se lançar.
+func genDive(sr int) []float64 {
+	cry := synth(sr, 620, 980, 0.16, 0.26, waveSine, 0.02, 0.55)
+	air := synth(sr, 0, 0, 0.14, 0.10, waveNoise, 0.05, 0.7)
+	return mix(cry, air)
+}
+
+// genGraze: tique agudo e curtíssimo ao raspar um projétil. Precisa ser
+// discreto — acontece muitas vezes seguidas.
+func genGraze(sr int) []float64 {
+	return synth(sr, 1750, 1500, 0.035, 0.14, waveSine, 0.02, 0.6)
 }
 
 // sequence encadeia notas (freq, duração) formando um laço curto de música.

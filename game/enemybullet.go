@@ -20,6 +20,9 @@ type EnemyBullet struct {
 	x, y   float64
 	vx, vy float64
 	dead   bool
+	// grazed conta os frames de espera até este projétil poder render carga de
+	// graze outra vez, para roçar um único tiro não encher a bomba sozinho.
+	grazed int
 }
 
 // newEnemyBullet cria um projétil inimigo já com a velocidade ajustada pela
@@ -35,7 +38,14 @@ func newEnemyBullet(x, y, vx, vy float64) *EnemyBullet {
 func (b *EnemyBullet) update() {
 	b.x += b.vx
 	b.y += b.vy
+	if b.grazed > 0 {
+		b.grazed--
+	}
 }
+
+// centerX/centerY dão o centro do projétil, usado na medida do graze.
+func (b *EnemyBullet) centerX() float64 { return b.x + enemyBulletSize/2 }
+func (b *EnemyBullet) centerY() float64 { return b.y + enemyBulletSize/2 }
 
 func (b *EnemyBullet) offScreen() bool {
 	return b.y > ScreenHeight || b.y+enemyBulletSize < 0 ||

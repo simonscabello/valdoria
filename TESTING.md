@@ -27,6 +27,7 @@ VALDORIA_DEV=1 VALDORIA_SEED=42 go run .
 | Mover | WASD / setas |
 | Modo de precisão | Shift |
 | Atirar | Espaço |
+| Mergulho do grifo | Z |
 | Invocação ancestral (bomba) | X / Ctrl |
 | Pausar | Esc |
 | Confirmar no menu | Enter |
@@ -92,6 +93,12 @@ go run ./cmd/balance
 - [ ] Trocar de elemento preserva nível e carga (nunca é uma perda).
 - [ ] No nível 3 as marcas de carga somem e passam a cair mais curas/escudos.
 - [ ] Nenhuma magia congela inimigos no lugar (a Luz causa só dano).
+- [ ] `Z` lança o grifo na direção apontada, com rastro dourado, e a câmera acompanha o arranque.
+- [ ] Durante o mergulho o grifo atravessa inimigos ferindo-os e **não** toma dano.
+- [ ] A barra de fôlego (dourada, rodapé) esvazia ao mergulhar e não deixa emendar dois seguidos.
+- [ ] Passar raspando um tiro inimigo acende um anel ciano, toca um tique e enche a barra de graze.
+- [ ] Ao encher a barra de graze, aparece "INVOCACAO!" e o contador de bombas sobe (teto de 4).
+- [ ] Com um gamepad conectado: analógico move, botão sul atira, leste mergulha, gatilhos precisão/bomba, Start pausa.
 - [ ] Trecho 1 (Campos) é acessível: apenas corvos, bem espaçados.
 - [ ] Aparece a Runa de Fogo logo no início e troca a arma ao coletar.
 - [ ] Coletar a mesma runa aumenta o nível (até 3); runa diferente troca a arma **mantendo o nível** (trocar nunca rebaixa o poder — dá vontade de pegar qualquer runa).

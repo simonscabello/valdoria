@@ -28,8 +28,17 @@ type Player struct {
 	weaponLevel  int
 	weaponCharge int // runas acumuladas rumo ao próximo nível
 	shieldTimer  int
-	wingPhase    float64
-	tilt         float64
+
+	// Mergulho do Grifo e fôlego (ver dive.go).
+	diveState   diveState
+	diveTimer   int
+	diveVX      float64
+	diveVY      float64
+	diveHit     []*Enemy
+	diveHitBoss bool
+	stamina     float64
+	wingPhase   float64
+	tilt        float64
 }
 
 func newPlayer() *Player {
@@ -39,35 +48,25 @@ func newPlayer() *Player {
 		health:      initialHealth,
 		weapon:      weaponLight,
 		weaponLevel: 1,
+		stamina:     staminaMax,
 	}
 }
 
 func (p *Player) update() {
-	p.precision = ebiten.IsKeyPressed(ebiten.KeyShift)
+	p.precision = actionPressed(actPrecision)
 
 	speed := playerSpeed
 	if p.precision {
 		speed = playerPrecisionSpeed
 	}
 
-	var dx, dy float64
-	if ebiten.IsKeyPressed(ebiten.KeyA) || ebiten.IsKeyPressed(ebiten.KeyArrowLeft) {
-		dx--
+	// O mergulho substitui o movimento normal enquanto dura.
+	dx, dy := moveVector()
+	if p.updateDive() {
+		dx, dy = p.diveVX, p.diveVY
+	} else {
+		p.moveBy(dx, dy, speed)
 	}
-	if ebiten.IsKeyPressed(ebiten.KeyD) || ebiten.IsKeyPressed(ebiten.KeyArrowRight) {
-		dx++
-	}
-	if ebiten.IsKeyPressed(ebiten.KeyW) || ebiten.IsKeyPressed(ebiten.KeyArrowUp) {
-		dy--
-	}
-	if ebiten.IsKeyPressed(ebiten.KeyS) || ebiten.IsKeyPressed(ebiten.KeyArrowDown) {
-		dy++
-	}
-
-	dx, dy = normalizeDiagonal(dx, dy)
-	p.x += dx * speed
-	p.y += dy * speed
-	p.clampToScreen()
 
 	p.wingPhase += playerWingSpeed
 	p.tilt += (dx*playerTiltMax - p.tilt) * playerTiltRate
@@ -84,6 +83,13 @@ func (p *Player) update() {
 	if p.shieldTimer > 0 {
 		p.shieldTimer--
 	}
+}
+
+// moveBy desloca o jogador na direção dada e o mantém dentro da tela.
+func (p *Player) moveBy(dx, dy, speed float64) {
+	p.x += dx * speed
+	p.y += dy * speed
+	p.clampToScreen()
 }
 
 // normalizeDiagonal mantém a mesma velocidade nas oito direções: a diagonal é
@@ -113,7 +119,7 @@ func (p *Player) clampToScreen() {
 }
 
 func (p *Player) tryShoot() []*Bullet {
-	if !ebiten.IsKeyPressed(ebiten.KeySpace) || p.cooldown > 0 {
+	if !actionPressed(actFire) || p.cooldown > 0 {
 		return nil
 	}
 	p.cooldown = weaponCooldown(p.weapon, p.weaponLevel)
@@ -173,7 +179,7 @@ func (p *Player) hitbox() (x, y, w, h float64) {
 }
 
 func (p *Player) canBeHit() bool {
-	if dev.invincible {
+	if dev.invincible || p.diving() {
 		return false
 	}
 	return p.invincible == 0
@@ -202,6 +208,11 @@ func (p *Player) respawn() {
 	p.invincible = respawnInvincibility
 	p.shieldTimer = 0
 	p.weaponCharge = 0
+	p.diveState = diveIdle
+	p.diveTimer = 0
+	p.diveHit = p.diveHit[:0]
+	p.diveHitBoss = false
+	p.stamina = staminaMax
 	if p.weaponLevel > 1 {
 		p.weaponLevel--
 	}
@@ -222,6 +233,8 @@ func (p *Player) draw(screen *ebiten.Image) {
 		vector.DrawFilledRect(screen, float32(p.x+bulletInset-1), float32(p.y-2), bulletWidth+2, 3, flash, false)
 		vector.DrawFilledRect(screen, float32(p.x+playerSize-bulletInset-bulletWidth-1), float32(p.y-2), bulletWidth+2, 3, flash, false)
 	}
+
+	p.drawDiveTrail(screen)
 
 	if p.precision {
 		hx, hy, hw, hh := p.hitbox()

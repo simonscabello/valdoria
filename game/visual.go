@@ -39,9 +39,11 @@ const (
 	shakeBossMagnitude = 4.5
 	// Subir de faixa de corrupção é um evento de mundo: sacode mais que um dano.
 	shakeCorruptionMagnitude = 5.0
-	shakeDecay               = 0.86
-	shakeMaxOffset           = 5.0
-	shakeMinMagnitude        = 0.15
+	// Mergulho: sacudida curta, só para dar arranque ao gesto.
+	shakeDiveMagnitude = 2.4
+	shakeDecay         = 0.86
+	shakeMaxOffset     = 5.0
+	shakeMinMagnitude  = 0.15
 
 	// Flash discreto ao receber dano.
 	damageFlashDuration = 12

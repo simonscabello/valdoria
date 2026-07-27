@@ -96,16 +96,21 @@ go test ./...   # ou: make test
 
 ## Controles
 
-| Ação                | Teclas                         |
-| ------------------- | ------------------------------ |
-| Mover               | `W` `A` `S` `D` ou setas       |
-| Modo de precisão    | Segurar `Shift`                |
-| Atirar              | `Espaço` (contínuo ao segurar) |
-| Invocação Ancestral (bomba) | `X` ou `Ctrl`          |
-| Pausar / Despausar  | `Esc`                          |
-| Silenciar áudio     | `M`                            |
-| Navegar menus       | Setas / `W` `S`                |
-| Confirmar           | `Enter`                        |
+| Ação                | Teclado                        | Gamepad (layout padrão) |
+| ------------------- | ------------------------------ | --- |
+| Mover               | `W` `A` `S` `D` ou setas       | Analógico esquerdo / direcional |
+| **Mergulho do Grifo** | `Z` ou `Shift` direito       | Botão direito (leste) |
+| Modo de precisão    | Segurar `Shift`                | Gatilho esquerdo |
+| Atirar              | `Espaço` (contínuo ao segurar) | Botão inferior (sul) |
+| Invocação Ancestral (bomba) | `X` ou `Ctrl`          | Gatilho direito |
+| Pausar / Despausar  | `Esc`                          | Start |
+| Silenciar áudio     | `M`                            | Select |
+| Navegar menus       | Setas / `W` `S`                | Analógico / direcional |
+| Confirmar           | `Enter`                        | Botão inferior (sul) |
+
+Toda a entrada passa por uma **camada de ações** (`game/input.go`): o código
+pergunta pela ação, nunca pela tecla. É o que permite teclado e gamepad
+conviverem e o que abre caminho para remapeamento.
 
 As teclas de desenvolvimento (`1`–`4`, `Z`/`F`/`C`/`V`/`B`, `Tab`, `F1`–`F3`,
 `K`, `L`) só funcionam com o modo dev ativo — veja a seção "Modo de desenvolvimento".
@@ -162,6 +167,8 @@ As teclas de desenvolvimento (`1`–`4`, `Z`/`F`/`C`/`V`/`B`, `Tab`, `F1`–`F3`
   - **Toda runa elemental equipa aquele elemento e avança a carga de poder.** A cada três runas o nível sobe (até o máximo 3), e as marcas de carga no HUD mostram o progresso. Nível e carga são uma potência compartilhada entre as três magias: trocar de elemento nunca rebaixa nem desperdiça.
   - No teto de poder os drops passam a favorecer cura e escudo, para nenhuma runa cair inerte.
   - Chance de drop configurável e alguns drops garantidos por onda.
+- **Mergulho do Grifo** (`Z`): o grifo se lança na direção apontada por ~0,4s, invulnerável, causando dano de contato e empurrando a câmera — a única mecânica do jogo que avança **contra** a rolagem da tela. Custa **fôlego** (barra no rodapé) e tem uma janela de recuperação em que não dá para emendar outro. Atravessa cada inimigo uma única vez por mergulho.
+- **Graze**: passar a menos de 13px de um projétil inimigo sem ser atingido carrega a Invocação Ancestral (barra ciano no rodapé). Ao encher, o jogador **ganha uma bomba** — até quatro. Converte medo em ganância e faz a mecânica mais espetacular do jogo circular, em vez de ficar guardada até o fim.
 - HUD com arma, nível, marcas de carga rumo ao próximo nível e estado do escudo.
 - **Vidas e barra de energia**: barra de HP; ao zerar, perde uma vida e reaparece (limpa os projéteis inimigos, ganha invencibilidade, volta a uma área segura e perde apenas um nível de arma). Início com três vidas; sem vidas, Game Over.
 - **Invocação Ancestral (bomba)**: `X`/`Ctrl` limpa os projéteis inimigos, causa dano elevado a todos os inimigos, deixa o jogador invulnerável por instantes e exibe um dragão atravessando a tela. Começa com duas cargas (mostradas no HUD) e não pode ser usada em pausa/Game Over.
@@ -246,7 +253,7 @@ licença de cada um.
 - Curva de poder: com apenas três níveis de arma, o teto chega a ~33% da partida. Só as Runas Fundidas (v0.6) resolvem isso — ver `GAME_DIRECTION.md`.
 - A corrupção ainda não pode ser purificada: falta o Altar entre trechos (v0.6).
 - O medidor divide espaço com o campo de jogo; a moldura lateral decorada que lhe daria palco próprio ainda não existe.
-- Sem suporte a gamepad: a entrada é lida direto do teclado, sem camada de ações.
+- Remapeamento de teclas ainda não é exposto ao jogador (a camada de ações já suporta, falta a interface).
 - Builds e testes cobrem apenas `amd64` (Linux e Windows).
 - A nova fonte de UI e os biomas das fases 2-3 ainda dependem de verificação visual manual (sem teste de renderização).
 
@@ -271,14 +278,14 @@ licença de cada um.
 | Power-ups | Sim (runas, cura, escudo) |
 | Vidas | Sim (respawn; quantidade varia por dificuldade) |
 | Pontuação | Sim (formação, sem dano, multiplicador, recorde) |
-| Bomba especial | Sim (Invocação Ancestral) |
+| Bomba especial | Sim (Invocação Ancestral, recarregável por graze) |
 | Chefe com fases | Sim (Vharak, três fases; Ascendido com o reino caído) |
 | Game Over | Sim |
 | Vitória | Sim |
 | Pausa | Sim |
 | Áudio | Sim (música + efeitos, procedural) |
 | Modo de desenvolvimento | Sim (via variáveis de ambiente) |
-| Testes | Sim (139 testes automatizados) |
+| Testes | Sim (152 testes automatizados) |
 | Build executável | Sim (Linux e Windows) |
 
 ## Estrutura do projeto
@@ -313,6 +320,9 @@ valdoria/
     ├── difficulty.go   # presets Fácil/Normal/Difícil (multiplicadores)
     ├── balance.go      # simulação e critérios de balanceamento (sem janela)
     ├── corruption.go   # Medidor de Corrupção, faixas e variantes corrompidas
+    ├── input.go        # camada de ações (teclado + gamepad padrão)
+    ├── dive.go         # Mergulho do Grifo e fôlego
+    ├── graze.go        # graze: raspar projéteis carrega a bomba
     ├── save.go         # persistência de recordes e opções (JSON)
     ├── weapon.go       # as três magias, níveis, leque e som por arma
     ├── powerup.go      # runas, cura e escudo
@@ -329,7 +339,7 @@ valdoria/
     ├── uitext.go       # fonte própria da interface (text/v2 + basicfont)
     ├── effects.go      # vibração de tela e flash de dano
     ├── audio.go        # gerenciador de áudio (música, efeitos, volumes, mudo)
-    └── *_test.go       # 139 testes (jogador, armas, inimigos, ondas, chefe, fluxo, dev, áudio, integração, save, sobrevivência, sprites)
+    └── *_test.go       # 152 testes (jogador, armas, inimigos, ondas, chefe, fluxo, dev, áudio, integração, save, sobrevivência, sprites)
 ```
 
 ## Modo de desenvolvimento
@@ -402,7 +412,7 @@ critérios rodam no `go test` (`TestBestiaryIsBalanced`).
 
 ## Testes automatizados
 
-São **139 testes** (`go test ./...`), cobrindo as regras independentes de renderização:
+São **152 testes** (`go test ./...`), cobrindo as regras independentes de renderização:
 
 - **Jogador**: clamp na tela, escudo, respawn e redução de arma, invencibilidade dev, normalização da diagonal.
 - **Armas**: troca, progressão de nível, teto, ângulos do leque, perfuração do gelo.

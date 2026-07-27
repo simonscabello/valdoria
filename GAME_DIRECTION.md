@@ -171,8 +171,38 @@ por `TestGameDemandsDodging`, `TestEnemiesThreatenWithoutDragging` e
 
 ---
 
-**Próximo bloco:** 0.4 — o Mergulho do Grifo, o fôlego, o graze e a camada de
-input com gamepad (seção 7).
+---
+
+## ✅ Estado de execução — versão 0.4 "O verbo" concluída
+
+| Entrega | Estado |
+| --- | --- |
+| Camada de input por ações | ✅ `input.go` — o código pergunta pela ação, nunca pela tecla |
+| Gamepad completo (layout padrão) | ✅ analógico com zona morta, todos os botões, navegação de menus |
+| Mergulho do Grifo | ✅ direção apontada, i-frames, dano de contato, câmera empurrada |
+| Fôlego | ✅ custo por mergulho, recuperação lenta pós-gesto, barra no HUD |
+| Graze | ✅ raio de 13px, carga por projétil raspado, bomba ao encher (teto 4) |
+
+**O Mergulho** é o verbo que separa este jogo dos concorrentes: naves não
+mergulham. Ele segue a regra do dodge roll de *Enter the Gungeon* —
+invulnerabilidade legível, custo visível e janela de recuperação. Sem os três,
+seria um botão de invencibilidade e apagaria o desafio.
+
+**O Graze** resolve um problema real medido na 0.2: a bomba era o gesto mais
+espetacular do jogo, o jogador tinha duas cargas por partida e a economia antiga
+ainda pagava pontos por **não** usá-las. Agora chegar perto do perigo devolve
+cargas — o instinto de fugir para o canto se inverte, que é exatamente a "tensão
+heroica" da seção 2.8.
+
+**Estado técnico:** 152 testes, `gofmt`/`vet`/`-race` limpos, 20 de 20 critérios.
+
+**Pendente da 0.4:** o pacote pesado de game feel (itens 1–20 da seção 8) e a
+interface de remapeamento — a camada de ações já suporta, falta expor. Vibração
+de gamepad também fica para junto do polimento.
+
+**Próximo bloco:** 0.5 — a cara do jogo (cenários em pixel art, fonte própria,
+HUD nas molduras laterais, primeiras trilhas produzidas). É o bloco que depende
+de contratação externa, e a seção 15 recomenda iniciá-la **agora**.
 
 > ⚠️ **O passo 14 do plano de ação continua pendente e é o mais importante do
 > cronograma:** validar a Corrupção com 5 jogadores externos. O sistema está

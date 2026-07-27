@@ -72,6 +72,11 @@ type Game struct {
 	bombCharges     int
 	bombEffectTimer int
 
+	// Graze: carga rumo à próxima Invocação Ancestral (ver graze.go).
+	grazeCharge float64
+	grazeCount  int
+	grazeFlash  int
+
 	score        int
 	highScore    int
 	survivalBest int
@@ -167,6 +172,9 @@ func (g *Game) reset() {
 	g.lives = dp.startLives
 	g.bombCharges = dp.startBombs
 	g.bombEffectTimer = 0
+	g.grazeCharge = 0
+	g.grazeCount = 0
+	g.grazeFlash = 0
 	g.score = 0
 	g.combo = 0
 	g.comboTimer = 0
@@ -237,7 +245,7 @@ func (g *Game) Update() error {
 	}
 	g.updateStars()
 
-	if inpututil.IsKeyJustPressed(ebiten.KeyM) {
+	if actionJustPressed(actMute) {
 		g.audio.toggleMute()
 		g.persist()
 	}
@@ -295,7 +303,7 @@ func (g *Game) updateMusicForState() {
 // updateMenu navega o menu inicial. Sair encerra o jogo sem erro.
 func (g *Game) updateMenu() error {
 	g.moveMenuSelection(menuItemCount)
-	if !inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+	if !actionJustPressed(actConfirm) {
 		return nil
 	}
 	g.audio.playSFX(sfxMenu)
@@ -331,7 +339,7 @@ func (g *Game) cycleDifficulty() {
 }
 
 func (g *Game) updateControls() {
-	if inpututil.IsKeyJustPressed(ebiten.KeyEnter) || inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+	if actionJustPressed(actConfirm) || actionJustPressed(actPause) {
 		g.enterMenu()
 	}
 }
@@ -339,11 +347,11 @@ func (g *Game) updateControls() {
 func (g *Game) updateOptions() {
 	g.moveMenuSelection(optionsItemCount)
 	g.handleVolumeKeys(0, 1)
-	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+	if actionJustPressed(actPause) {
 		g.enterMenu()
 		return
 	}
-	if !inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+	if !actionJustPressed(actConfirm) {
 		return
 	}
 	g.audio.playSFX(sfxMenu)
@@ -353,13 +361,13 @@ func (g *Game) updateOptions() {
 }
 
 func (g *Game) updatePaused() {
-	if inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+	if actionJustPressed(actPause) {
 		g.state = g.resumeState
 		return
 	}
 	g.moveMenuSelection(pauseItemCount)
 	g.handleVolumeKeys(1, 2)
-	if !inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+	if !actionJustPressed(actConfirm) {
 		return
 	}
 	g.audio.playSFX(sfxMenu)
@@ -372,10 +380,10 @@ func (g *Game) updatePaused() {
 // linhas musicIdx ou sfxIdx. Persiste a preferência ao mudar.
 func (g *Game) handleVolumeKeys(musicIdx, sfxIdx int) {
 	delta := 0.0
-	if inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft) || inpututil.IsKeyJustPressed(ebiten.KeyA) {
+	if actionJustPressed(actLeft) {
 		delta = -volumeStep
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyArrowRight) || inpututil.IsKeyJustPressed(ebiten.KeyD) {
+	if actionJustPressed(actRight) {
 		delta = volumeStep
 	}
 	if delta == 0 {
@@ -403,7 +411,7 @@ func (g *Game) sfxVolumeLabel() string {
 
 func (g *Game) updateEndScreen(options []string) {
 	g.moveMenuSelection(len(options))
-	if !inpututil.IsKeyJustPressed(ebiten.KeyEnter) {
+	if !actionJustPressed(actConfirm) {
 		return
 	}
 	g.audio.playSFX(sfxMenu)
@@ -416,11 +424,11 @@ func (g *Game) updateEndScreen(options []string) {
 
 func (g *Game) moveMenuSelection(count int) {
 	moved := false
-	if inpututil.IsKeyJustPressed(ebiten.KeyArrowUp) || inpututil.IsKeyJustPressed(ebiten.KeyW) {
+	if actionJustPressed(actUp) {
 		g.menuIndex = (g.menuIndex - 1 + count) % count
 		moved = true
 	}
-	if inpututil.IsKeyJustPressed(ebiten.KeyArrowDown) || inpututil.IsKeyJustPressed(ebiten.KeyS) {
+	if actionJustPressed(actDown) {
 		g.menuIndex = (g.menuIndex + 1) % count
 		moved = true
 	}
@@ -459,6 +467,7 @@ func (g *Game) updatePlay() {
 		}
 	}
 	g.handleDebugSpawns()
+	g.handleDive()
 	g.handleBomb()
 
 	if g.bombEffectTimer > 0 {
@@ -489,7 +498,12 @@ func (g *Game) updatePlay() {
 	g.updateEnemies()
 	g.updateEnemyBullets()
 	g.updatePowerups()
+	g.updateGraze()
+	if g.grazeFlash > 0 {
+		g.grazeFlash--
+	}
 	g.handleCollisions()
+	g.diveCollisions()
 	g.collectPowerups()
 	g.removeDead()
 
@@ -732,7 +746,7 @@ func (g *Game) handleBomb() {
 	if g.bombCharges <= 0 {
 		return
 	}
-	if !inpututil.IsKeyJustPressed(ebiten.KeyX) && !inpututil.IsKeyJustPressed(ebiten.KeyControl) {
+	if !actionJustPressed(actBomb) {
 		return
 	}
 	g.useBomb()
@@ -761,7 +775,7 @@ func (g *Game) useBomb() {
 }
 
 func (g *Game) handlePauseToggle() {
-	if !inpututil.IsKeyJustPressed(ebiten.KeyEscape) {
+	if !actionJustPressed(actPause) {
 		return
 	}
 	if g.state == statePaused {
@@ -1240,6 +1254,8 @@ func (g *Game) drawWorld(screen *ebiten.Image) {
 
 	screen.Fill(g.level.background())
 	ox, oy := g.shakeOffset()
+	dx, dy := g.diveCameraOffset()
+	ox, oy = ox+dx, oy+dy
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Translate(ox, oy)
 	screen.DrawImage(g.scene, op)
@@ -1295,6 +1311,7 @@ func (g *Game) drawScene(dst *ebiten.Image) {
 	if g.bombEffectTimer > 0 {
 		g.drawBombEffect(dst)
 	}
+	g.drawGrazeAura(dst)
 	g.drawCorruptionOverlay(dst)
 	g.drawEscapeWarnings(dst)
 
@@ -1475,12 +1492,13 @@ func (g *Game) drawControls(screen *ebiten.Image) {
 	drawCentered(screen, "CONTROLES", 36)
 	lines := []string{
 		"Setas/WASD: mover",
+		"Z: mergulho do grifo",
 		"Shift: precisao",
 		"Espaco: disparar",
 		"X/Ctrl: invocacao",
 		"Escape: pausar",
-		"M: mudo",
-		"Enter: confirmar",
+		"M: mudo / Enter: confirma",
+		"Raspar tiros carrega a bomba",
 	}
 	for i, l := range lines {
 		drawTextCentered(screen, l, float64(66+i*20), uiInk)
@@ -1530,7 +1548,8 @@ func (g *Game) drawGameOver(screen *ebiten.Image) {
 	}
 	stats = append(stats,
 		"Corrupcao: "+itoa(g.corruption.percent())+"%",
-		"Fugas: "+itoa(g.corruption.escaped))
+		"Fugas: "+itoa(g.corruption.escaped),
+		"Raspoes: "+itoa(g.grazeCount))
 	for i, s := range stats {
 		drawTextCentered(screen, s, float64(72+i*18), uiInk)
 	}
@@ -1705,6 +1724,8 @@ func (g *Game) drawHUD(screen *ebiten.Image) {
 		ScreenWidth-6, 10)
 
 	g.drawCorruptionBar(screen)
+	g.drawGrazeBar(screen)
+	g.drawStaminaBar(screen)
 	g.drawHealthBar(screen)
 	labelBlock(screen, []string{
 		"VIDAS " + itoa(g.lives),

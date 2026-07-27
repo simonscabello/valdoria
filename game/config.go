@@ -14,6 +14,22 @@ const (
 	bulletInset         = 3
 	muzzleFlashDuration = 4
 
+	// Mergulho do Grifo — o verbo de assinatura do jogo.
+	//
+	// Naves não mergulham. É a mecânica que faz o jogador sentir que monta um
+	// animal, e a única do gênero que avança *contra* a rolagem da tela.
+	// Custa fôlego, e o instante logo depois é de vulnerabilidade aumentada:
+	// sem esse custo, invulnerabilidade sob demanda apagaria o desafio.
+	diveDuration     = 22  // frames de avanço
+	diveSpeed        = 6.2 // px/frame para frente
+	diveDamage       = 14  // dano de contato ao atravessar um inimigo
+	diveRecovery     = 14  // frames de recuperação após o mergulho
+	diveCameraPush   = 10.0
+	diveStaminaCost  = 34
+	staminaMax       = 100
+	staminaRegen     = 0.55 // por frame parado/voando normalmente
+	staminaRegenSlow = 0.18 // enquanto se recupera de um mergulho
+
 	invincibilityDuration = 60  // frames (1s a 60 TPS)
 	invincibilityBlink    = 6   // frames por ciclo de piscada
 	respawnInvincibility  = 150 // invencibilidade ao reaparecer
@@ -21,6 +37,15 @@ const (
 
 // Habilidade especial (Invocação Ancestral) e pontuação.
 const (
+	// Graze: raspar um projétil inimigo sem ser atingido carrega a Invocação
+	// Ancestral. Converte medo em ganância — o jogador passa a *querer* chegar
+	// perto — e faz as bombas circularem em vez de ficarem guardadas até o fim.
+	grazeRadius    = 13.0
+	grazePerBullet = 3.0 // carga por projétil raspado
+	grazeFull      = 100.0
+	grazeCooldown  = 24 // frames até o mesmo projétil poder render de novo
+
+	bombMaxCharges     = 4
 	bombStartCharges   = 2
 	bombDamage         = 999
 	bombInvincibility  = 120
